@@ -1,0 +1,179 @@
+<div class="dashboard">
+  <!-- Header -->
+  <header class="dashboard-header">
+    <div class="container">
+      <h1 class="dashboard-title">Bank Lead Management System</h1>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="dashboard-main">
+    <div class="container">
+      <!-- Lead Upload Section -->
+      <section class="upload-section">
+        <div class="section-card">
+          <h2 class="section-title">Lead Upload</h2>
+          <p class="section-description">Upload CSV or Excel files containing customer leads</p>
+          
+          <div class="upload-area">
+            <div class="upload-icon">📤</div>
+            <p class="upload-text">Select file to upload</p>
+            <p class="upload-hint">Supports CSV, XLS, XLSX files</p>
+            <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx" (change)="onFileSelected($event)">
+            <label for="fileInput" class="btn btn-primary">Choose File</label>
+          </div>
+
+          @if (selectedFileName()) {
+            <div class="selected-file">
+              <span class="file-name">📄 {{ selectedFileName() }}</span>
+              <button class="btn-remove" (click)="clearFile()" type="button">✕</button>
+            </div>
+          }
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="productSelect" class="form-label">Product</label>
+              <select id="productSelect" class="form-select" [ngModel]="selectedProduct()" (ngModelChange)="selectedProduct.set($event)">
+                <option value="">Select Product</option>
+                @for (product of products(); track product.product_id) {
+                  <option [value]="product.product_id">{{ product.product_name }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="sourceSelect" class="form-label">Source</label>
+              <select id="sourceSelect" class="form-select" [ngModel]="selectedSource()" (ngModelChange)="selectedSource.set($event)">
+                <option value="">Select Source</option>
+                @for (source of sources(); track source.source_id) {
+                  <option [value]="source.source_id">{{ source.source_name }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" (click)="onUpload()" type="button">Upload</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lead List Section -->
+      <section class="leads-section">
+        <div class="section-card">
+          <h2 class="section-title">Lead List</h2>
+
+          <!-- Search and Filters -->
+          <div class="filters-section">
+            <div class="search-group">
+              <input 
+                type="text" 
+                class="search-input" 
+                placeholder="Search by name, email, or phone..." 
+                [ngModel]="searchQuery()" 
+                (ngModelChange)="searchQuery.set($event)"
+              >
+              @if (searchQuery()) {
+                <button class="btn-clear" (click)="clearSearch()" type="button">✕</button>
+              }
+            </div>
+
+            <div class="filter-group">
+              <select 
+                class="filter-select" 
+                [ngModel]="selectedProductFilter()" 
+                (ngModelChange)="selectedProductFilter.set($event)"
+              >
+                <option value="">All Products</option>
+                @for (product of products(); track product.product_id) {
+                  <option [value]="product.product_id">{{ product.product_name }}</option>
+                }
+              </select>
+
+              <select 
+                class="filter-select" 
+                [ngModel]="selectedSourceFilter()" 
+                (ngModelChange)="selectedSourceFilter.set($event)"
+              >
+                <option value="">All Sources</option>
+                @for (source of sources(); track source.source_id) {
+                  <option [value]="source.source_id">{{ source.source_name }}</option>
+                }
+              </select>
+
+              @if (selectedProductFilter() || selectedSourceFilter() || searchQuery()) {
+                <button class="btn btn-secondary" (click)="clearFilters()" type="button">Clear Filters</button>
+              }
+            </div>
+          </div>
+
+          <!-- Leads Table -->
+          <div class="table-container">
+            <table class="leads-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Product</th>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Date Added</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (lead of filteredLeads(); track lead.lead_id) {
+                  <tr>
+                    <td>{{ lead.name || '-' }}</td>
+                    <td>{{ lead.email || '-' }}</td>
+                    <td>{{ lead.phone || '-' }}</td>
+                    <td>
+                      <span class="badge badge-product">{{ lead.product_name || '-' }}</span>
+                    </td>
+                    <td>
+                      <span class="badge badge-source">{{ lead.source_name || '-' }}</span>
+                    </td>
+                    <td>
+                      <span class="badge badge-status" 
+                            [class.status-new]="lead.status === 'new'" 
+                            [class.status-contacted]="lead.status === 'contacted'"
+                            [class.status-converted]="lead.status === 'converted'"
+                            [class.status-rejected]="lead.status === 'rejected'">
+                        {{ lead.status }}
+                      </span>
+                    </td>
+                    <td>{{ lead.created_at }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="7" class="empty-state">
+                      @if (searchQuery() || selectedProductFilter() || selectedSourceFilter()) {
+                        No leads match the current filters.
+                      } @else {
+                        No leads found. Upload a file to get started.
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Results count -->
+          <div class="results-count">
+            Showing {{ filteredLeads().length }} of {{ allLeads().length }} leads
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="dashboard-footer">
+    <div class="container">
+      <p>&copy; {{ currentYear() }} Bank Lead Management System - Internal Use Only</p>
+    </div>
+  </footer>
+</div>
+
+<router-outlet />
