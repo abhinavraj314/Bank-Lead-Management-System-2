@@ -1,10 +1,9 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import productRoutes from './routes/productRoutes';
-import sourceRoutes from './routes/sourceRoutes';
-import leadRoutes from './routes/leadRoutes';
+import apiRoutes from './routes';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 const app = express();
 
@@ -25,25 +24,13 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // API routes
-app.use('/api/products', productRoutes);
-app.use('/api/sources', sourceRoutes);
-app.use('/api/leads', leadRoutes);
+app.use('/api', apiRoutes);
 
-// 404 handler
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
-});
+// 404 handler (must be after all routes)
+app.use(notFoundHandler);
 
-// Global error handler
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: {
-      message: err.message || 'Internal Server Error',
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    }
-  });
-});
+// Global error handler (must be last)
+app.use(errorHandler);
 
 export default app;
 

@@ -3,8 +3,7 @@ import { Lead } from '../models/Lead';
 import { Product } from '../models/Product';
 import { Source } from '../models/Source';
 import multer from 'multer';
-import { parse as csvParse } from 'csv-parse';
-import ExcelJS from 'exceljs';  // ✅ FIXED
+import ExcelJS from 'exceljs';
 import {
   normalizeHeaders,
   normalizeRowValues,
@@ -12,6 +11,9 @@ import {
 } from '../utils/leadNormalization';
 import { upsertLead } from '../services/leadService';
 import { leadUploadSchema } from '../utils/validation';
+import { parseCSV } from '../utils/csvParser';
+import { sendSuccess, sendError, sendSuccessWithPagination, calculatePagination } from '../utils/responseHandler';
+import { v4 as uuidv4 } from 'uuid';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -37,18 +39,22 @@ const upload = multer({
 
 export const uploadMiddleware = upload.single('file');
 
+/**
+ * Upload leads from CSV/Excel file
+ * POST /api/leads/upload
+ */
 export const uploadLeads = async (req: Request, res: Response): Promise<void> => {
   try {
     const file = req.file;
     
     if (!file) {
-      res.status(400).json({ error: 'File is required' });
+      sendError(res, 'File is required', 400);
       return;
     }
     
     const { error, value } = leadUploadSchema.validate(req.body);
     if (error) {
-      res.status(400).json({ error: error.details[0].message });
+      sendError(res, error.details[0].message, 400);
       return;
     }
     
@@ -60,12 +66,12 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
     ]);
     
     if (!product) {
-      res.status(400).json({ error: `Product '${p_id}' not found` });
+      sendError(res, `Product '${p_id}' not found`, 400);
       return;
     }
     
     if (!source) {
-      res.status(400).json({ error: `Source '${source_id}' not found` });
+      sendError(res, `Source '${source_id}' not found`, 400);
       return;
     }
     
@@ -73,36 +79,41 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
     const filename = file.originalname.toLowerCase();
     
     if (filename.endsWith('.csv')) {
-      const content = file.buffer.toString('utf-8');
-      rows = await new Promise<any[]>((resolve, reject) => {
-        csvParse(
-          content,
-          {
-            columns: true,
-            skip_empty_lines: true,
-            trim: true,
-            relaxColumnCount: true
-          },
-          (err, records) => {
-            if (err) return reject(err);
-            resolve(records);
-          }
-        );
-      });
+      // Parse CSV
+      const parseResult = parseCSV(file.buffer);
+      
+      if (!parseResult.success) {
+        sendError(res, 'Failed to parse CSV file', 400);
+        return;
+      }
+      
+      // Process valid rows
+      for (const parsedRow of parseResult.validRows) {
+        rows.push(parsedRow.data);
+      }
+      
+      // Track failed rows
+      const failedRows = parseResult.invalidRows.map(r => ({
+        row: r.row,
+        errors: r.errors,
+        data: r.data
+      }));
+      
+      if (rows.length === 0 && failedRows.length > 0) {
+        sendError(res, 'No valid rows found in CSV', 400, { failedRows });
+        return;
+      }
     } else if (filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
-      // ✅ FIXED: ExcelJS parsing
       try {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(file.buffer as any);
-
         
         const worksheet = workbook.worksheets[0];
         if (!worksheet) {
-          res.status(400).json({ error: 'Excel file has no sheets' });
+          sendError(res, 'Excel file has no sheets', 400);
           return;
         }
         
-        rows = [];
         const headers: string[] = [];
         let isFirstRow = true;
         
@@ -130,20 +141,16 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
           }
         });
       } catch (excelError: any) {
-        res.status(400).json({ 
-          error: 'Failed to parse Excel file: ' + excelError.message 
-        });
+        sendError(res, 'Failed to parse Excel file: ' + excelError.message, 400);
         return;
       }
     } else {
-      res.status(400).json({
-        error: 'Unsupported file format. Use CSV or Excel (.xlsx, .xls)'
-      });
+      sendError(res, 'Unsupported file format. Use CSV or Excel (.xlsx, .xls)', 400);
       return;
     }
     
     if (!rows || rows.length === 0) {
-      res.status(400).json({ error: 'File contains no data rows' });
+      sendError(res, 'File contains no data rows', 400);
       return;
     }
     
@@ -154,7 +161,7 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
     let mergedCount = 0;
     let failedCount = 0;
     const failedRows: Array<{
-      index: number;
+      row: number;
       reason: string;
       raw: any;
     }> = [];
@@ -169,7 +176,7 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
         if (!validation.valid) {
           failedCount++;
           failedRows.push({
-            index: i + 1,
+            row: i + 1,
             reason: validation.reason!,
             raw: rawRow
           });
@@ -190,26 +197,29 @@ export const uploadLeads = async (req: Request, res: Response): Promise<void> =>
       } catch (error: any) {
         failedCount++;
         failedRows.push({
-          index: i + 1,
+          row: i + 1,
           reason: error.message || 'Processing error',
           raw: rawRow
         });
       }
     }
     
-    res.json({
-      success: true,
+    sendSuccess(res, {
       totalRows: rows.length,
       insertedCount,
       mergedCount,
       failedCount,
       failedRows: failedRows.slice(0, 100)
-    });
+    }, 'Upload completed');
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error.message, 500);
   }
 };
 
+/**
+ * Get all leads with pagination and filters
+ * GET /api/leads
+ */
 export const getLeads = async (req: Request, res: Response): Promise<void> => {
   try {
     const {
@@ -247,6 +257,7 @@ export const getLeads = async (req: Request, res: Response): Promise<void> => {
     if (q) {
       const searchTerm = String(q).trim();
       filter.$or = [
+        { name: { $regex: searchTerm, $options: 'i' } },
         { email: { $regex: searchTerm, $options: 'i' } },
         { phone_number: { $regex: searchTerm, $options: 'i' } }
       ];
@@ -269,63 +280,252 @@ export const getLeads = async (req: Request, res: Response): Promise<void> => {
       Lead.countDocuments(filter)
     ]);
     
-    res.json({
+    sendSuccessWithPagination(
+      res,
       leads,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total: totalCount,
-        totalPages: Math.ceil(totalCount / limitNum)
-      }
-    });
+      calculatePagination(pageNum, limitNum, totalCount)
+    );
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error.message, 500);
   }
 };
 
+/**
+ * Get single lead by lead_id
+ * GET /api/leads/:id
+ */
 export const getLeadById = async (req: Request, res: Response): Promise<void> => {
   try {
     const lead = await Lead.findOne({ lead_id: req.params.id });
     
     if (!lead) {
-      res.status(404).json({
-        error: `Lead with lead_id '${req.params.id}' not found`
-      });
+      sendError(res, `Lead with lead_id '${req.params.id}' not found`, 404);
       return;
     }
     
-    res.json(lead);
+    sendSuccess(res, lead);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error.message, 500);
   }
 };
 
+/**
+ * Create new lead
+ * POST /api/leads
+ */
+export const createLead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, phone_number, email, aadhar_number, p_id, source_id } = req.body;
+    
+    // Validate at least one identifier
+    if (!phone_number && !email && !aadhar_number) {
+      sendError(res, 'At least one identifier (phone_number, email, or aadhar_number) is required', 400);
+      return;
+    }
+    
+    // Validate product and source if provided
+    if (p_id) {
+      const product = await Product.findOne({ p_id: p_id.toUpperCase() });
+      if (!product) {
+        sendError(res, `Product '${p_id}' not found`, 400);
+        return;
+      }
+    }
+    
+    if (source_id) {
+      const source = await Source.findOne({ source_id: source_id.toUpperCase() });
+      if (!source) {
+        sendError(res, `Source '${source_id}' not found`, 400);
+        return;
+      }
+    }
+    
+    // Normalize data first
+    const normalizedEmail = email ? email.toLowerCase().trim() : undefined;
+    const normalizedPhone = phone_number ? phone_number.replace(/\D/g, '').slice(-10) : undefined;
+    const normalizedAadhar = aadhar_number ? aadhar_number.replace(/\D/g, '') : undefined;
+    
+    // Check for duplicates
+    const duplicateConditions: any[] = [];
+    if (normalizedEmail) {
+      duplicateConditions.push({ email: normalizedEmail });
+    }
+    if (normalizedPhone) {
+      duplicateConditions.push({ phone_number: normalizedPhone });
+    }
+    if (normalizedAadhar) {
+      duplicateConditions.push({ aadhar_number: normalizedAadhar });
+    }
+    
+    if (duplicateConditions.length > 0) {
+      const existing = await Lead.findOne({ $or: duplicateConditions });
+      
+      if (existing) {
+        sendError(res, 'Lead with matching identifier already exists', 409);
+        return;
+      }
+    }
+    
+    const lead = new Lead({
+      lead_id: uuidv4(),
+      name: name?.trim(),
+      phone_number: normalizedPhone,
+      email: normalizedEmail,
+      aadhar_number: normalizedAadhar,
+      source_id: source_id?.toUpperCase(),
+      p_id: p_id?.toUpperCase(),
+      created_at: new Date(),
+      merged_from: [],
+      sources_seen: source_id ? [source_id.toUpperCase()] : [],
+      products_seen: p_id ? [p_id.toUpperCase()] : [],
+      lead_score: null,
+      score_reason: null
+    });
+    
+    await lead.save();
+    
+    sendSuccess(res, lead, 'Lead created successfully', 201);
+  } catch (error: any) {
+    if (error.code === 11000) {
+      sendError(res, 'Lead with this identifier already exists', 409);
+    } else {
+      sendError(res, error.message, 500);
+    }
+  }
+};
+
+/**
+ * Update lead
+ * PUT /api/leads/:id
+ */
+export const updateLead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const lead = await Lead.findOne({ lead_id: req.params.id });
+    
+    if (!lead) {
+      sendError(res, `Lead with lead_id '${req.params.id}' not found`, 404);
+      return;
+    }
+    
+    // Update fields
+    if (req.body.name !== undefined) {
+      lead.name = req.body.name?.trim();
+    }
+    
+    if (req.body.phone_number !== undefined) {
+      lead.phone_number = req.body.phone_number ? req.body.phone_number.replace(/\D/g, '').slice(-10) : undefined;
+    }
+    
+    if (req.body.email !== undefined) {
+      lead.email = req.body.email ? req.body.email.toLowerCase().trim() : undefined;
+    }
+    
+    if (req.body.aadhar_number !== undefined) {
+      lead.aadhar_number = req.body.aadhar_number ? req.body.aadhar_number.replace(/\D/g, '') : undefined;
+    }
+    
+    if (req.body.p_id !== undefined && req.body.p_id) {
+      const pId = String(req.body.p_id).toUpperCase();
+      const product = await Product.findOne({ p_id: pId });
+      if (!product) {
+        sendError(res, `Product '${req.body.p_id}' not found`, 400);
+        return;
+      }
+      lead.p_id = pId;
+      if (lead.products_seen && !lead.products_seen.includes(pId)) {
+        lead.products_seen.push(pId);
+      }
+    }
+    
+    if (req.body.source_id !== undefined && req.body.source_id) {
+      const sourceId = String(req.body.source_id).toUpperCase();
+      const source = await Source.findOne({ source_id: sourceId });
+      if (!source) {
+        sendError(res, `Source '${req.body.source_id}' not found`, 400);
+        return;
+      }
+      lead.source_id = sourceId;
+      if (lead.sources_seen && !lead.sources_seen.includes(sourceId)) {
+        lead.sources_seen.push(sourceId);
+      }
+    }
+    
+    await lead.save();
+    
+    sendSuccess(res, lead, 'Lead updated successfully');
+  } catch (error: any) {
+    sendError(res, error.message, 500);
+  }
+};
+
+/**
+ * Delete lead
+ * DELETE /api/leads/:id
+ */
+export const deleteLead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const lead = await Lead.findOneAndDelete({ lead_id: req.params.id });
+    
+    if (!lead) {
+      sendError(res, `Lead with lead_id '${req.params.id}' not found`, 404);
+      return;
+    }
+    
+    sendSuccess(res, { message: 'Lead deleted successfully' });
+  } catch (error: any) {
+    sendError(res, error.message, 500);
+  }
+};
+
+/**
+ * Get merge history for a lead
+ * GET /api/leads/:id/history
+ */
+export const getLeadHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const lead = await Lead.findOne({ lead_id: req.params.id });
+    
+    if (!lead) {
+      sendError(res, `Lead with lead_id '${req.params.id}' not found`, 404);
+      return;
+    }
+    
+    sendSuccess(res, {
+      lead_id: lead.lead_id,
+      merged_from: lead.merged_from,
+      sources_seen: lead.sources_seen,
+      products_seen: lead.products_seen,
+      created_at: lead.created_at
+    });
+  } catch (error: any) {
+    sendError(res, error.message, 500);
+  }
+};
+
+/**
+ * Score lead (stub)
+ * POST /api/leads/:id/score
+ */
 export const scoreLeadStub = async (req: Request, res: Response): Promise<void> => {
   try {
     const lead = await Lead.findOne({ lead_id: req.params.id });
     
     if (!lead) {
-      res.status(404).json({
-        error: `Lead with lead_id '${req.params.id}' not found`
-      });
+      sendError(res, `Lead with lead_id '${req.params.id}' not found`, 404);
       return;
     }
     
-    lead.lead_score = 0;
-    lead.score_reason = 'AI scoring not implemented yet - placeholder';
-    await lead.save();
+    // Import scoring service
+    const { scoreLead } = await import('../services/leadScoringService');
+    const result = await scoreLead(lead);
     
-    res.json({
-      message: 'AI scoring stub executed (not implemented)',
+    sendSuccess(res, {
       lead_id: lead.lead_id,
-      lead_score: lead.lead_score,
-      score_reason: lead.score_reason,
-      note: 'This is a placeholder. Actual AI scoring will be implemented in future phases.'
-    });
+      lead_score: result.score,
+      score_reason: result.reason,
+      breakdown: result.breakdown
+    }, 'Lead scored successfully');
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    sendError(res, error.message, 500);
   }
 };
-
-
-
