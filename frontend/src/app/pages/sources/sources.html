@@ -1,0 +1,65 @@
+<div class="sources-page">
+  <div class="page-header">
+    <h1 class="page-title">Sources</h1>
+    <button class="btn btn-primary" (click)="openCreateModal()">Create Source</button>
+  </div>
+
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Source Name</th>
+          <th>Product</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let source of sources()">
+          <td>{{ source.source_name }}</td>
+          <td>{{ getProductName(source.product_id) }}</td>
+          <td>
+            <span class="badge" [class.badge-active]="source.status === 'active'" [class.badge-inactive]="source.status === 'inactive'">
+              {{ source.status }}
+            </span>
+          </td>
+        </tr>
+        @if (sources().length === 0) {
+          <tr>
+            <td colspan="3" class="empty-state">No sources found.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Create Modal -->
+  @if (showCreateModal()) {
+    <div class="modal-overlay" (click)="closeCreateModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Create Source</h2>
+          <button class="btn-close" (click)="closeCreateModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Source Name</label>
+            <input type="text" [(ngModel)]="newSource.source_name" placeholder="e.g., Bank Website, Partner" />
+          </div>
+          <div class="form-group">
+            <label>Product</label>
+            <select [(ngModel)]="newSource.product_id">
+              <option value="">Select Product</option>
+              <option *ngFor="let product of products()" [value]="product.product_id">
+                {{ product.product_name }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeCreateModal()">Cancel</button>
+          <button class="btn btn-primary" (click)="onCreateSource()">Create</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
