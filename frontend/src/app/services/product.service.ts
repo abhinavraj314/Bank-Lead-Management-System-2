@@ -1,26 +1,37 @@
 import { Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { Product } from '../models/lead.models';
+import { Observable, map, catchError, of } from 'rxjs';
+import { Product, BackendProduct, ProductsResponse } from '../models/lead.models';
+import { ApiService } from './api.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ProductService {
-  // Mock data - will be replaced with API calls later
-  private mockProducts: Product[] = [
-    { product_id: 'prod_001', product_name: 'Car Loan' },
-    { product_id: 'prod_002', product_name: 'Home Loan' },
-    { product_id: 'prod_003', product_name: 'Credit Card' },
-    { product_id: 'prod_004', product_name: 'Personal Loan' },
-    { product_id: 'prod_005', product_name: 'Business Loan' }
-  ];
+  constructor(private apiService: ApiService) {}
 
   /**
-   * Get all products (mock service - returns Observable)
-   * In production, this will call: GET /api/products
+   * Get all products from backend
+   * Maps backend response: { count, products } -> Product[]
+   * Maps fields: p_id -> product_id, p_name -> product_name
    */
   getProducts(): Observable<Product[]> {
-    return of(this.mockProducts);
+    return this.apiService.get<ProductsResponse>('/products').pipe(
+      map((response) => {
+        // Unwrap response if wrapped
+        const products = response.products || (response as any);
+        const productArray = Array.isArray(products) ? products : [];
+        
+        // Map backend fields to frontend fields
+        return productArray.map((backendProduct: BackendProduct) => ({
+          product_id: backendProduct.p_id,
+          product_name: backendProduct.p_name
+        }));
+      }),
+      catchError((error) => {
+        console.error('Error fetching products:', error);
+        // Return empty array on error to prevent UI breakage
+        return of([]);
+      })
+    );
   }
 }
-

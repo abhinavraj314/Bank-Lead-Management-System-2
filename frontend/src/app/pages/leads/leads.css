@@ -1,0 +1,269 @@
+/* Page wrapper */
+.dashboard {
+    min-height: 100vh;
+    background: #f8fafc;
+    padding: 2rem 2.5rem;
+  }
+  
+  /* Card container */
+  .section-card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 2.25rem 2.5rem;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+    margin-bottom: 2.5rem;
+  }
+  
+  /* Headings */
+  .section-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: #0f172a;
+  }
+  
+  .section-description {
+    color: #64748b;
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+  }
+  
+  /* ---------- Upload Area ---------- */
+  
+  .upload-area {
+    border: 2px dashed #cbd5e1;
+    border-radius: 14px;
+    padding: 2.75rem;
+    text-align: center;
+    margin-bottom: 2.25rem;
+    background: #fafcff;
+  }
+  
+  .upload-icon {
+    font-size: 2.25rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .upload-text {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  
+  .upload-hint {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-bottom: 1.25rem;
+  }
+  
+  .file-input {
+    display: none;
+  }
+  
+  /* Buttons */
+  .btn {
+    border: none;
+    padding: 0.7rem 1.6rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  
+  .btn-primary {
+    background: #2563eb;
+    color: #ffffff;
+  }
+  
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+  
+  .btn-secondary {
+    background: #e2e8f0;
+    color: #0f172a;
+  }
+  
+  /* Selected file */
+  .selected-file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 2rem;
+  }
+  
+  .file-name {
+    font-size: 0.9rem;
+  }
+  
+  .btn-remove {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: #64748b;
+  }
+  
+  /* ---------- Forms ---------- */
+  
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.75rem;
+    margin-bottom: 2.25rem;
+  }
+  
+  .form-group {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .form-label {
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+  }
+  
+  .form-select {
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.9rem;
+  }
+  
+  /* ---------- Filters ---------- */
+  
+  .filters-section {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 1.75rem;
+    margin-bottom: 2rem;
+  }
+  
+  .search-group {
+    position: relative;
+  }
+  
+  .search-input {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.9rem;
+  }
+  
+  .btn-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: #64748b;
+  }
+  
+  .filter-group {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .filter-select {
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.9rem;
+  }
+  
+  /* ---------- Table ---------- */
+  
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .leads-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  .leads-table th,
+  .leads-table td {
+    padding: 0.85rem;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+  
+  .leads-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.04em;
+  }
+  
+  /* Badges */
+  .badge {
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  
+  .badge-product {
+    background: #e0e7ff;
+  }
+  
+  .badge-source {
+    background: #fef3c7;
+  }
+  
+  .badge-status {
+    background: #e2e8f0;
+  }
+  
+  .status-new { background: #dbeafe; }
+  .status-contacted { background: #fef3c7; }
+  .status-converted { background: #dcfce7; }
+  .status-rejected { background: #fee2e2; }
+  
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #64748b;
+  }
+  
+  /* Footer count */
+  .results-count {
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+  
+  /* ---------- Responsive ---------- */
+  
+  @media (max-width: 1024px) {
+    .filters-section {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .dashboard {
+      padding: 1.5rem;
+    }
+  
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+  
+    .filter-group {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+  
