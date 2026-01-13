@@ -1,0 +1,37 @@
+<div class="deduplication-rules-page">
+  <div class="page-header">
+    <h1 class="page-title">Deduplication Rules</h1>
+  </div>
+
+  <div class="content-card">
+    <p class="description">
+      Leads are considered duplicates if selected fields match
+    </p>
+
+    <div class="fields-list">
+      <div class="field-item" *ngFor="let field of fields()">
+        <label class="checkbox-label">
+          <input 
+            type="checkbox" 
+            [checked]="field.field_id && isFieldSelected(field.field_id)"
+            (change)="field.field_id && toggleField(field.field_id)"
+          />
+          <span class="field-info">
+            <span class="field-name">{{ field.display_name }}</span>
+            <span class="field-meta">({{ field.field_name }} - {{ field.type }})</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button 
+        class="btn btn-primary" 
+        (click)="onSaveRules()"
+        [disabled]="isSaving()"
+      >
+        {{ isSaving() ? 'Saving...' : 'Save Deduplication Rules' }}
+      </button>
+    </div>
+  </div>
+</div>
