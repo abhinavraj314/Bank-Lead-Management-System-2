@@ -1,0 +1,56 @@
+<div class="products-page">
+  <div class="page-header">
+    <h1 class="page-title">Products</h1>
+    <button class="btn btn-primary" (click)="openCreateModal()">Create Product</button>
+  </div>
+
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Product Name</th>
+          <th>Status</th>
+          <th>Created Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let product of products()">
+          <td>{{ product.product_name }}</td>
+          <td>
+            <span class="badge" [class.badge-active]="product.status === 'active'" [class.badge-inactive]="product.status === 'inactive'">
+              {{ product.status }}
+            </span>
+          </td>
+          <td>{{ product.created_date }}</td>
+        </tr>
+        @if (products().length === 0) {
+          <tr>
+            <td colspan="3" class="empty-state">No products found.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Create Modal -->
+  @if (showCreateModal()) {
+    <div class="modal-overlay" (click)="closeCreateModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Create Product</h2>
+          <button class="btn-close" (click)="closeCreateModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Product Name</label>
+            <input type="text" [(ngModel)]="newProductName" placeholder="e.g., Car Loan, Home Loan" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeCreateModal()">Cancel</button>
+          <button class="btn btn-primary" (click)="onCreateProduct()">Create</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

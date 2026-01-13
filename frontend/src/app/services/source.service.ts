@@ -1,26 +1,52 @@
 import { Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { Source } from '../models/lead.models';
+import { Observable, map, catchError, of } from 'rxjs';
+import { Source, BackendSource, SourcesResponse } from '../models/lead.models';
+import { ApiService } from './api.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class SourceService {
-  // Mock data - will be replaced with API calls later
-  private mockSources: Source[] = [
-    { source_id: 'src_001', source_name: 'Bank Website', product_id: 'prod_001' },
-    { source_id: 'src_002', source_name: 'Partner', product_id: 'prod_002' },
-    { source_id: 'src_003', source_name: 'Campaign', product_id: 'prod_003' },
-    { source_id: 'src_004', source_name: 'Referral', product_id: 'prod_004' },
-    { source_id: 'src_005', source_name: 'Social Media', product_id: 'prod_005' }
-  ];
+  constructor(private apiService: ApiService) {}
 
   /**
-   * Get all sources (mock service - returns Observable)
-   * In production, this will call: GET /api/sources
+   * Get all sources from backend
+   * Maps backend response: { count, sources } -> Source[]
+   * Maps fields: p_id -> product_id
    */
   getSources(): Observable<Source[]> {
-    return of(this.mockSources);
+    return this.apiService.get<SourcesResponse>('/sources').pipe(
+      map((response) => {
+        // Unwrap response if wrapped
+        const sources = response.sources || (response as any);
+        const sourceArray = Array.isArray(sources) ? sources : [];
+        
+        // Map backend fields to frontend fields
+        return sourceArray.map((backendSource: BackendSource) => {
+          // Normalize status if provided by backend, otherwise undefined
+          const backendStatus = (backendSource as any).status;
+          let normalizedStatus: 'active' | 'inactive' | undefined = undefined;
+          
+          if (backendStatus && typeof backendStatus === 'string') {
+            const lowerStatus = backendStatus.toLowerCase();
+            if (lowerStatus === 'active' || lowerStatus === 'inactive') {
+              normalizedStatus = lowerStatus as 'active' | 'inactive';
+            }
+          }
+          
+          return {
+            source_id: backendSource.source_id,
+            source_name: backendSource.source_name,
+            product_id: backendSource.p_id,
+            status: normalizedStatus
+          };
+        });
+      }),
+      catchError((error) => {
+        console.error('Error fetching sources:', error);
+        // Return empty array on error to prevent UI breakage
+        return of([]);
+      })
+    );
   }
 }
-
