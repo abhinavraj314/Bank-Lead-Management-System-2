@@ -68,18 +68,22 @@ export class ApiService {
 
   /**
    * Centralized error handling
+   * SSR-safe: Checks if ErrorEvent exists (browser-only API)
    */
   private handleError = (error: HttpErrorResponse): Observable<never> => {
     let errorMessage = 'An unknown error occurred';
     
-    if (error.error instanceof ErrorEvent) {
-      // Client-side error
+    // SSR-safe check: ErrorEvent only exists in browser, not in Node.js
+    const isErrorEvent = typeof ErrorEvent !== 'undefined' && error.error instanceof ErrorEvent;
+    
+    if (isErrorEvent) {
+      // Client-side error (browser only)
       errorMessage = `Error: ${error.error.message}`;
       console.error('Client-side error:', error.error);
     } else {
-      // Server-side error
+      // Server-side error or SSR context
       const status = error.status;
-      const message = error.error?.error || error.error?.message || error.message;
+      const message = error.error?.error?.message || error.error?.message || error.message;
       
       switch (status) {
         case 400:

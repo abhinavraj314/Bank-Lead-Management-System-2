@@ -38,55 +38,98 @@ export interface ProductWithStatus extends Product {
   created_date?: string;
 }
 
-// Backend response interfaces (raw API responses)
+// Backend response interfaces (Spring Boot camelCase format)
 export interface BackendLead {
-  lead_id: string;
+  id?: string; // MongoDB _id
+  leadId: string; // Mapped to lead_id in Mongo
   name?: string;
   email?: string;
-  phone_number?: string;
-  aadhar_number?: string;
-  source_id?: string;
-  p_id?: string;
-  created_at: string | Date;
-  _id?: string;
-  __v?: number;
-  lead_score?: number | null;
-  score_reason?: string | null;
-  createdAt?: Date;
-  updatedAt?: Date;
+  phoneNumber?: string;
+  aadharNumber?: string;
+  sourceId?: string;
+  pId?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  leadScore?: number | null;
+  scoreReason?: string | null;
+  // Additional fields that might be present
+  [key: string]: any;
 }
 
 export interface BackendProduct {
-  p_id: string;
-  p_name: string;
-  _id?: string;
-  __v?: number;
-  createdAt?: Date;
-  updatedAt?: Date;
+  id?: string; // MongoDB _id
+  pId: string; // Product ID (camelCase)
+  pName: string; // Product Name (camelCase)
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }
 
 export interface BackendSource {
-  source_id: string;
-  source_name: string;
-  p_id: string;
-  _id?: string;
-  __v?: number;
-  createdAt?: Date;
-  updatedAt?: Date;
+  id?: string; // MongoDB _id
+  sId: string; // Source ID (camelCase)
+  sName: string; // Source Name (camelCase)
+  pId: string; // Product ID (camelCase)
+  columns?: string[]; // Source metadata columns
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }
 
 export interface BackendCanonicalField {
-  field_name: string;
-  display_name: string;
-  field_type: string;
-  is_active: boolean;
-  is_required: boolean;
-  version: number;
-  _id?: string;
-  __v?: number;
+  id?: string; // MongoDB _id
+  fieldName: string; // camelCase
+  displayName: string; // camelCase
+  fieldType: string; // 'String' | 'Number' | 'Date' | 'Boolean'
+  isActive: boolean; // camelCase
+  isRequired: boolean; // camelCase
+  version: string; // e.g., 'v1'
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }
 
-// API response wrappers
+// Spring Boot API Response Wrapper
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+  error?: {
+    message: string;
+    details?: any;
+  };
+}
+
+// Spring Boot Page Wrapper (for paginated responses)
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  size: number;
+  number: number;
+  first: boolean;
+  last: boolean;
+  numberOfElements: number;
+  empty: boolean;
+}
+
+// Upload Response (from Spring Boot)
+export interface UploadResponse {
+  totalRows: number;
+  insertedCount: number;
+  mergedCount: number;
+  failedCount: number;
+  failedRows?: Array<{
+    rowNumber: number;
+    reason: string;
+    rawInput?: any;
+  }>;
+}
+
+// Legacy interfaces (kept for backward compatibility if needed)
 export interface ProductsResponse {
   count?: number;
   products: BackendProduct[];
@@ -105,17 +148,4 @@ export interface LeadsResponse {
     total: number;
     totalPages: number;
   };
-}
-
-export interface UploadResponse {
-  success: boolean;
-  totalRows: number;
-  insertedCount: number;
-  mergedCount: number;
-  failedCount: number;
-  failedRows?: Array<{
-    index: number;
-    reason: string;
-    raw: any;
-  }>;
 }

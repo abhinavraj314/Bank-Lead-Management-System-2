@@ -41,14 +41,25 @@
           <button class="btn-close" (click)="closeCreateModal()">×</button>
         </div>
         <div class="modal-body">
+          @if (errorMessage()) {
+            <div class="error-message" style="color: #dc3545; padding: 0.5rem; margin-bottom: 1rem; background: #f8d7da; border-radius: 4px;">
+              {{ errorMessage() }}
+            </div>
+          }
           <div class="form-group">
-            <label>Product Name</label>
-            <input type="text" [(ngModel)]="newProductName" placeholder="e.g., Car Loan, Home Loan" />
+            <label>Product ID <span style="color: red;">*</span></label>
+            <input type="text" [(ngModel)]="newProductId" placeholder="e.g., PL, HL" [disabled]="isCreating()" />
+          </div>
+          <div class="form-group">
+            <label>Product Name <span style="color: red;">*</span></label>
+            <input type="text" [(ngModel)]="newProductName" placeholder="e.g., Personal Loan, Home Loan" [disabled]="isCreating()" />
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" (click)="closeCreateModal()">Cancel</button>
-          <button class="btn btn-primary" (click)="onCreateProduct()">Create</button>
+          <button class="btn btn-secondary" (click)="closeCreateModal()" [disabled]="isCreating()">Cancel</button>
+          <button class="btn btn-primary" (click)="onCreateProduct()" [disabled]="isCreating()">
+            {{ isCreating() ? 'Creating...' : 'Create' }}
+          </button>
         </div>
       </div>
     </div>
