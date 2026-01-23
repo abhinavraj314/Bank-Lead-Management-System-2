@@ -4,6 +4,7 @@ import com.bankleads.bank_leads_backend.dto.request.CreateLeadRequest;
 import com.bankleads.bank_leads_backend.dto.response.ApiResponse;
 import com.bankleads.bank_leads_backend.model.CanonicalField;
 import com.bankleads.bank_leads_backend.model.Lead;
+import com.bankleads.bank_leads_backend.model.Source;
 import com.bankleads.bank_leads_backend.repository.CanonicalFieldRepository;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
 import com.bankleads.bank_leads_backend.repository.ProductRepository;
@@ -16,6 +17,8 @@ import com.bankleads.bank_leads_backend.util.ResponseUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -35,8 +38,11 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/leads")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class LeadController {
+
+    private static final Logger log = LoggerFactory.getLogger(LeadController.class);
     
     private final LeadRepository leadRepository;
     private final ProductRepository productRepository;
@@ -52,55 +58,91 @@ public class LeadController {
             @RequestParam("p_id") String pId,
             @RequestParam("source_id") String sourceId) {
         
+        final String pIdUpper = pId != null ? pId.toUpperCase() : null;
+        final String sourceIdUpper = sourceId != null ? sourceId.toUpperCase() : null;
+        log.info("Lead upload started: filename={}, sizeBytes={}, p_id={}, source_id={}",
+                file != null ? file.getOriginalFilename() : null,
+                file != null ? file.getSize() : null,
+                pIdUpper, sourceIdUpper);
+
         if (file.isEmpty()) {
+            log.warn("Lead upload rejected: empty file (p_id={}, source_id={})", pIdUpper, sourceIdUpper);
             return ResponseUtil.error("File is required", HttpStatus.BAD_REQUEST);
         }
         
-        if (!productRepository.existsByPId(pId.toUpperCase())) {
+        if (!productRepository.existsByPId(pIdUpper)) {
+            log.warn("Lead upload rejected: product not found (p_id={})", pIdUpper);
             return ResponseUtil.error("Product '" + pId + "' not found",
                     HttpStatus.BAD_REQUEST);
         }
         
-        if (!sourceRepository.existsBySourceId(sourceId.toUpperCase())) {
+        if (!sourceRepository.existsBySourceId(sourceIdUpper)) {
+            log.warn("Lead upload rejected: source not found (source_id={})", sourceIdUpper);
             return ResponseUtil.error("Source '" + sourceId + "' not found",
                     HttpStatus.BAD_REQUEST);
         }
         
         try {
-            List<Map<String, String>> rows = new ArrayList<>();
+            // Fetch related metadata for debugging (does not affect upload behavior)
+            Optional<Source> sourceOpt = sourceRepository.findBySourceId(sourceIdUpper);
+            List<String> sourceColumns = sourceOpt.map(Source::getColumns).orElse(null);
+            log.info("Source columns for validation/debug (source_id={}): {}", sourceIdUpper, sourceColumns);
+
+            // Log canonical fields (active + required) - currently not enforced for upload
+            Page<CanonicalField> canonicalPage = canonicalFieldRepository.findAll(PageRequest.of(0, 1000));
+            List<String> canonicalNames = canonicalPage.getContent().stream()
+                    .map(CanonicalField::getFieldName)
+                    .filter(Objects::nonNull)
+                    .toList();
+            List<String> requiredCanonicalNames = canonicalPage.getContent().stream()
+                    .filter(f -> Boolean.TRUE.equals(f.getIsActive()) && Boolean.TRUE.equals(f.getIsRequired()))
+                    .map(CanonicalField::getFieldName)
+                    .filter(Objects::nonNull)
+                    .toList();
+            log.info("Canonical fields loaded: count={}, names={}", canonicalNames.size(), canonicalNames);
+            log.info("Required canonical fields (active+required): {}", requiredCanonicalNames);
+
+            // Keep row numbers for logging/debug; does not change core upload logic
+            class RowCtx {
+                final int rowNumber; // 1-based excluding header for CSV; Excel uses sheet row number
+                final Map<String, String> raw;
+                final Map<String, String> normalized;
+                RowCtx(int rowNumber, Map<String, String> raw, Map<String, String> normalized) {
+                    this.rowNumber = rowNumber;
+                    this.raw = raw;
+                    this.normalized = normalized;
+                }
+            }
+
+            List<RowCtx> rows = new ArrayList<>();
             String filename = file.getOriginalFilename().toLowerCase();
             
             if (filename.endsWith(".csv")) {
-                // Fetch active canonical fields for validation
-                List<CanonicalField> canonicalFields = canonicalFieldRepository.findAll()
-                        .stream()
-                        .filter(field -> field.getIsActive() != null && field.getIsActive())
-                        .collect(Collectors.toList());
-                
-                // Parse CSV with validation
-                CsvParserUtil.ParseResult parseResult = CsvParserUtil.parseCSV(file.getBytes(), canonicalFields);
+                CsvParserUtil.ParseResult parseResult = CsvParserUtil.parseCSV(file.getBytes());
+
+                // Log parse-stage failures (headers and mapping are logged inside CsvParserUtil)
+                if (!parseResult.getInvalidRows().isEmpty()) {
+                    log.warn("CSV parse produced invalid rows: invalidCount={}", parseResult.getInvalidRows().size());
+                    for (CsvParserUtil.ParsedRow r : parseResult.getInvalidRows()) {
+                        log.warn("Row {} failed during parsing/normalization: {}", r.getRow(), r.getErrors());
+                    }
+                }
                 
                 if (!parseResult.isSuccess() || parseResult.getValidRows().isEmpty()) {
-                    // Check if validation failed at header/field count level
-                    if (!parseResult.getInvalidRows().isEmpty() && 
-                        parseResult.getInvalidRows().get(0).getRow() == 1) {
-                        // Header/field count validation error
-                        List<String> headerErrors = parseResult.getInvalidRows().get(0).getErrors();
-                        return ResponseUtil.error("CSV validation failed: " + String.join("; ", headerErrors),
-                                HttpStatus.BAD_REQUEST);
-                    }
-                    
-                    // Row-level validation errors
+                    log.warn("Lead upload rejected: CSV parse failed or no valid rows (invalidCount={})",
+                            parseResult.getInvalidRows().size());
                     return ResponseUtil.error("Failed to parse CSV or no valid rows found",
                             HttpStatus.BAD_REQUEST,
                             parseResult.getInvalidRows().stream().map(r -> Map.of(
-                                    "row", r.getRow(),
-                                    "errors", r.getErrors()
+                                    "rowNumber", r.getRow(),
+                                    "reason", String.join("; ", r.getErrors()),
+                                    "rawInput", r.getRaw()
                             )).collect(Collectors.toList()));
                 }
                 
                 for (CsvParserUtil.ParsedRow parsedRow : parseResult.getValidRows()) {
-                    rows.add(parsedRow.getData());
+                    // parsedRow.getRow() is the CSV line number (header is row 1)
+                    rows.add(new RowCtx(parsedRow.getRow() - 1, parsedRow.getRaw(), parsedRow.getData()));
                 }
             } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
                 Workbook workbook = WorkbookFactory.create(file.getInputStream());
@@ -119,6 +161,8 @@ public class LeadController {
                 
                 Map<String, String> headerMapping = LeadNormalizationUtil.normalizeHeaders(
                         headers.toArray(new String[0]));
+                log.info("Excel headers parsed: {}", headers);
+                log.info("Excel header mapping (original->canonical): {}", headerMapping);
                 
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
@@ -133,7 +177,11 @@ public class LeadController {
                     Map<String, String> normalized = LeadNormalizationUtil.normalizeRowValues(rowData, headerMapping);
                     
                     if (LeadNormalizationUtil.validateIdentifiers(normalized)) {
-                        rows.add(normalized);
+                        int rowNumber = i; // 1-based excluding header (header is row 0)
+                        rows.add(new RowCtx(rowNumber, rowData, normalized));
+                    } else {
+                        log.warn("Row {} failed identifier validation (Excel): rawKeys={}, normalizedKeys={}",
+                                i, rowData.keySet(), normalized.keySet());
                     }
                 }
                 
@@ -144,6 +192,8 @@ public class LeadController {
             }
             
             if (rows.isEmpty()) {
+                log.warn("Lead upload rejected: no valid data rows after parsing (p_id={}, source_id={})",
+                        pIdUpper, sourceIdUpper);
                 return ResponseUtil.error("File contains no valid data rows",
                         HttpStatus.BAD_REQUEST);
             }
@@ -154,11 +204,12 @@ public class LeadController {
             List<Map<String, Object>> failedRows = new ArrayList<>();
             
             for (int i = 0; i < rows.size(); i++) {
-                Map<String, String> normalized = rows.get(i);
+                RowCtx rowCtx = rows.get(i);
+                Map<String, String> normalized = rowCtx.normalized;
                 try {
                     LeadService.UpsertContext ctx = new LeadService.UpsertContext(
-                            pId.toUpperCase(),
-                            sourceId.toUpperCase(),
+                            pIdUpper,
+                            sourceIdUpper,
                             normalized
                     );
                     
@@ -171,10 +222,12 @@ public class LeadController {
                     }
                 } catch (Exception e) {
                     failedCount++;
+                    String reason = e.getMessage() != null ? e.getMessage() : "Processing error";
+                    log.error("Row {} failed during upsert: {}", rowCtx.rowNumber, reason, e);
                     failedRows.add(Map.of(
-                            "row", i + 1,
-                            "reason", e.getMessage() != null ? e.getMessage() : "Processing error",
-                            "raw", normalized
+                            "rowNumber", rowCtx.rowNumber,           // Frontend expects rowNumber
+                            "reason", reason,
+                            "rawInput", rowCtx.raw                   // For debugging
                     ));
                 }
             }
@@ -186,9 +239,13 @@ public class LeadController {
             responseData.put("failedCount", failedCount);
             responseData.put("failedRows", failedRows.size() > 100 
                     ? failedRows.subList(0, 100) : failedRows);
+
+            log.info("Lead upload completed: totalRows={}, insertedCount={}, mergedCount={}, failedCount={} (p_id={}, source_id={})",
+                    rows.size(), insertedCount, mergedCount, failedCount, pIdUpper, sourceIdUpper);
             
             return ResponseUtil.success(responseData, "Upload completed");
         } catch (Exception e) {
+            log.error("Lead upload failed with exception: {}", e.getMessage(), e);
             return ResponseUtil.error("Failed to process file: " + e.getMessage(),
                     HttpStatus.INTERNAL_SERVER_ERROR);
         }
