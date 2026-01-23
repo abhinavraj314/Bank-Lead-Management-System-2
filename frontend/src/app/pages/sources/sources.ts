@@ -18,9 +18,13 @@ export class SourcesPage implements OnInit {
   protected readonly sources = signal<Source[]>([]);
   protected readonly products = signal<{ product_id: string; product_name: string }[]>([]);
   protected readonly showCreateModal = signal<boolean>(false);
-  protected newSource: { source_name: string; product_id: string } = {
+  protected readonly isCreating = signal<boolean>(false);
+  protected readonly errorMessage = signal<string>('');
+  protected readonly currentStep = signal<number>(1); // 1: Source details, 2: Columns
+  protected newSource: { source_name: string; product_id: string; columns: string[] } = {
     source_name: '',
-    product_id: ''
+    product_id: '',
+    columns: [''] // Start with one empty column
   };
 
   ngOnInit(): void {
@@ -52,25 +56,75 @@ export class SourcesPage implements OnInit {
 
   openCreateModal(): void {
     this.showCreateModal.set(true);
+    this.errorMessage.set('');
+    this.currentStep.set(1);
   }
 
   closeCreateModal(): void {
     this.showCreateModal.set(false);
-    this.newSource = { source_name: '', product_id: '' };
+    this.errorMessage.set('');
+    this.isCreating.set(false);
+    this.currentStep.set(1);
+    this.newSource = { source_name: '', product_id: '', columns: [''] };
+  }
+
+  nextStep(): void {
+    if (this.currentStep() === 1) {
+      // Validate step 1
+      if (!this.newSource.source_name.trim()) {
+        this.errorMessage.set('Source Name is required');
+        return;
+      }
+      if (!this.newSource.product_id) {
+        this.errorMessage.set('Product is required');
+        return;
+      }
+      this.errorMessage.set('');
+      this.currentStep.set(2);
+    }
+  }
+
+  prevStep(): void {
+    this.currentStep.set(1);
+    this.errorMessage.set('');
+  }
+
+  addColumn(): void {
+    this.newSource.columns.push('');
+  }
+
+  removeColumn(index: number): void {
+    this.newSource.columns.splice(index, 1);
   }
 
   onCreateSource(): void {
-    if (!this.newSource.source_name.trim() || !this.newSource.product_id) return;
-    
-    // Mock: Add to local state
-    const source: Source = {
-      source_id: `src_${Date.now()}`,
-      source_name: this.newSource.source_name,
-      product_id: this.newSource.product_id,
-      status: 'active'
-    };
-    
-    this.sources.set([...this.sources(), source]);
-    this.closeCreateModal();
+    // Validate columns
+    const validColumns = this.newSource.columns.filter(c => c.trim() !== '');
+    if (validColumns.length === 0) {
+      this.errorMessage.set('At least one column is required');
+      return;
+    }
+
+    this.isCreating.set(true);
+    this.errorMessage.set('');
+
+    // Generate s_id from source name
+    const sId = this.newSource.source_name.toUpperCase().replace(/\s+/g, '_');
+
+    this.sourceService.createSource({
+      s_id: sId,
+      s_name: this.newSource.source_name.trim(),
+      p_id: this.newSource.product_id,
+      columns: validColumns
+    }).subscribe({
+      next: () => {
+        this.loadSources(); // Reload from backend
+        this.closeCreateModal();
+      },
+      error: (error) => {
+        this.isCreating.set(false);
+        this.errorMessage.set(error.message || 'Failed to create source');
+      }
+    });
   }
 }

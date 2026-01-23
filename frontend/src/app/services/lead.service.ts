@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable, map, catchError, of } from 'rxjs';
-import { Lead, BackendLead, LeadsResponse, UploadResponse } from '../models/lead.models';
+import { Lead, BackendLead, ApiResponse, Page, UploadResponse } from '../models/lead.models';
 import { ApiService } from './api.service';
 import { ProductService } from './product.service';
 import { SourceService } from './source.service';
@@ -16,30 +16,36 @@ export class LeadService {
   ) {}
 
   /**
-   * Get all leads from backend
-   * Maps backend response: { leads, pagination } -> Lead[]
-   * Maps fields: p_id -> product_id, phone_number -> phone
+   * Get all leads from Spring Boot backend
+   * Handles ApiResponse<Page<Lead>> wrapper
+   * Maps camelCase fields (leadId, phoneNumber, sourceId, pId) to frontend fields
    * Note: product_name and source_name should be enriched by components using both services
    */
   getLeads(): Observable<Lead[]> {
-    return this.apiService.get<LeadsResponse>('/leads').pipe(
+    return this.apiService.get<ApiResponse<Page<BackendLead>>>('/leads').pipe(
       map((response) => {
-        // Unwrap response if wrapped
-        const leads = response.leads || (response as any);
-        const leadArray = Array.isArray(leads) ? leads : [];
+        // Extract data from ApiResponse wrapper
+        if (!response.success || !response.data) {
+          console.warn('API returned unsuccessful response or no data:', response);
+          return [];
+        }
+
+        // Extract leads from Page wrapper
+        const page = response.data;
+        const leads = page.content || [];
         
-        // Map backend fields to frontend fields
-        return leadArray.map((backendLead: BackendLead) => ({
-          lead_id: backendLead.lead_id,
+        // Map backend camelCase fields to frontend snake_case fields
+        return leads.map((backendLead: BackendLead) => ({
+          lead_id: backendLead.leadId,
           name: backendLead.name,
           email: backendLead.email,
-          phone: backendLead.phone_number || '',
-          product_id: backendLead.p_id || '',
+          phone: backendLead.phoneNumber || '',
+          product_id: backendLead.pId || '',
           product_name: '', // Components should enrich this using ProductService
-          source_id: backendLead.source_id || '',
+          source_id: backendLead.sourceId || '',
           source_name: '', // Components should enrich this using SourceService
           status: 'new' as const, // Default status since backend doesn't provide it
-          created_at: this.formatDate(backendLead.created_at)
+          created_at: this.formatDate(backendLead.createdAt)
         }));
       }),
       catchError((error) => {
@@ -51,8 +57,9 @@ export class LeadService {
   }
 
   /**
-   * Upload leads file
-   * Uses FormData with: file, p_id, source_id
+   * Upload leads file to Spring Boot backend
+   * Uses FormData with: file, p_id, source_id (matches Spring Boot @RequestParam names)
+   * Handles ApiResponse<Map<String, Object>> wrapper
    */
   uploadLeads(file: File, productId: string, sourceId: string): Observable<UploadResponse> {
     const formData = new FormData();
@@ -60,7 +67,23 @@ export class LeadService {
     formData.append('p_id', productId);
     formData.append('source_id', sourceId);
 
-    return this.apiService.uploadFile<UploadResponse>('/leads/upload', formData).pipe(
+    return this.apiService.uploadFile<ApiResponse<UploadResponse>>('/leads/upload', formData).pipe(
+      map((response) => {
+        // Extract data from ApiResponse wrapper
+        if (!response.success || !response.data) {
+          throw new Error(response.error?.message || response.message || 'Upload failed');
+        }
+        
+        // Map Spring Boot response to UploadResponse format
+        const data = response.data as any;
+        return {
+          totalRows: data.totalRows || 0,
+          insertedCount: data.insertedCount || 0,
+          mergedCount: data.mergedCount || 0,
+          failedCount: data.failedCount || 0,
+          failedRows: data.failedRows || []
+        };
+      }),
       catchError((error) => {
         console.error('Error uploading leads:', error);
         throw error; // Re-throw to let component handle it

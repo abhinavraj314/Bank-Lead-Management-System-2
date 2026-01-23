@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable, map, catchError, of } from 'rxjs';
-import { Source, BackendSource, SourcesResponse } from '../models/lead.models';
+import { Source, BackendSource, ApiResponse, Page } from '../models/lead.models';
 import { ApiService } from './api.service';
 
 @Injectable({
@@ -10,19 +10,25 @@ export class SourceService {
   constructor(private apiService: ApiService) {}
 
   /**
-   * Get all sources from backend
-   * Maps backend response: { count, sources } -> Source[]
-   * Maps fields: p_id -> product_id
+   * Get all sources from Spring Boot backend
+   * Handles ApiResponse<Page<Source>> wrapper
+   * Maps camelCase fields (sId, sName, pId) to frontend fields (source_id, source_name, product_id)
    */
   getSources(): Observable<Source[]> {
-    return this.apiService.get<SourcesResponse>('/sources').pipe(
+    return this.apiService.get<ApiResponse<Page<BackendSource>>>('/sources').pipe(
       map((response) => {
-        // Unwrap response if wrapped
-        const sources = response.sources || (response as any);
-        const sourceArray = Array.isArray(sources) ? sources : [];
+        // Extract data from ApiResponse wrapper
+        if (!response.success || !response.data) {
+          console.warn('API returned unsuccessful response or no data:', response);
+          return [];
+        }
+
+        // Extract sources from Page wrapper
+        const page = response.data;
+        const sources = page.content || [];
         
-        // Map backend fields to frontend fields
-        return sourceArray.map((backendSource: BackendSource) => {
+        // Map backend camelCase fields to frontend snake_case fields
+        return sources.map((backendSource: BackendSource) => {
           // Normalize status if provided by backend, otherwise undefined
           const backendStatus = (backendSource as any).status;
           let normalizedStatus: 'active' | 'inactive' | undefined = undefined;
@@ -35,9 +41,9 @@ export class SourceService {
           }
           
           return {
-            source_id: backendSource.source_id,
-            source_name: backendSource.source_name,
-            product_id: backendSource.p_id,
+            source_id: backendSource.sId,
+            source_name: backendSource.sName,
+            product_id: backendSource.pId,
             status: normalizedStatus
           };
         });
@@ -46,6 +52,49 @@ export class SourceService {
         console.error('Error fetching sources:', error);
         // Return empty array on error to prevent UI breakage
         return of([]);
+      })
+    );
+  }
+
+  /**
+   * Create a new source with columns metadata
+   * Requires s_id, s_name, p_id, and columns array
+   */
+  createSource(source: {
+    s_id: string;
+    s_name: string;
+    p_id: string;
+    columns?: string[];
+  }): Observable<Source> {
+    const requestBody: any = {
+      s_id: source.s_id.toUpperCase(),
+      s_name: source.s_name,
+      p_id: source.p_id.toUpperCase()
+    };
+
+    // Add columns to request payload if provided
+    if (source.columns && source.columns.length > 0) {
+      requestBody.columns = source.columns;
+    }
+
+    return this.apiService.post<ApiResponse<BackendSource>>('/sources', requestBody).pipe(
+      map((response) => {
+        if (!response.success || !response.data) {
+          const errorMessage = response.error?.message || response.message || 'Failed to create source';
+          throw new Error(errorMessage);
+        }
+
+        const backendSource = response.data;
+        return {
+          source_id: backendSource.sId,
+          source_name: backendSource.sName,
+          product_id: backendSource.pId,
+          status: 'active' as const
+        };
+      }),
+      catchError((error) => {
+        // Re-throw to let component handle errors
+        throw error;
       })
     );
   }
