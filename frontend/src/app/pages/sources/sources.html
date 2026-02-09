@@ -1,7 +1,9 @@
 <div class="sources-page">
   <div class="page-header">
-    <h1 class="page-title">Sources</h1>
-    <button class="btn btn-primary" (click)="openCreateModal()">Create Source</button>
+    <h1 class="page-title">{{ isAdmin() ? 'Sources' : 'View Sources' }}</h1>
+    <button *ngIf="isAdmin()" class="btn btn-primary" (click)="openCreateModal()">
+      Create Source
+    </button>
   </div>
 
   <div class="table-container">
@@ -10,22 +12,45 @@
         <tr>
           <th>Source Name</th>
           <th>Product</th>
+          <th>Columns</th>
           <th>Status</th>
+          <th *ngIf="isAdmin()">Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let source of sources()">
           <td>{{ source.source_name }}</td>
           <td>{{ getProductName(source.product_id) }}</td>
+          <td class="columns-cell">
+            <div class="columns-container">
+              <span>{{ getColumnsPreview(source.columns) }}</span>
+              @if (source.columns && source.columns.length > 3) {
+                <button class="btn-view-more" (click)="openColumnsModal(source)">View More</button>
+              }
+            </div>
+          </td>
           <td>
-            <span class="badge" [class.badge-active]="source.status === 'active'" [class.badge-inactive]="source.status === 'inactive'">
+            <span
+              class="badge"
+              [class.badge-active]="source.status === 'active'"
+              [class.badge-inactive]="source.status === 'inactive'"
+            >
               {{ source.status }}
             </span>
+          </td>
+          <td *ngIf="isAdmin()" class="actions-cell">
+            <button
+              class="btn btn-danger btn-sm"
+              (click)="onDeleteSource(source.source_id)"
+              [disabled]="isDeleting()"
+            >
+              Delete
+            </button>
           </td>
         </tr>
         @if (sources().length === 0) {
           <tr>
-            <td colspan="3" class="empty-state">No sources found.</td>
+            <td colspan="5" class="empty-state">No sources found.</td>
           </tr>
         }
       </tbody>
@@ -42,19 +67,32 @@
         </div>
         <div class="modal-body">
           @if (errorMessage()) {
-            <div class="error-message" style="color: #dc3545; padding: 0.5rem; margin-bottom: 1rem; background: #f8d7da; border-radius: 4px;">
+            <div
+              class="error-message"
+              style="
+                color: #dc3545;
+                padding: 0.5rem;
+                margin-bottom: 1rem;
+                background: #f8d7da;
+                border-radius: 4px;
+              "
+            >
               {{ errorMessage() }}
             </div>
           }
-
           @if (currentStep() === 1) {
             <!-- Step 1: Source Details -->
             <div class="form-group">
-              <label>Source Name <span style="color: red;">*</span></label>
-              <input type="text" [(ngModel)]="newSource.source_name" placeholder="e.g., Bank Website, Partner" [disabled]="isCreating()" />
+              <label>Source Name <span style="color: red">*</span></label>
+              <input
+                type="text"
+                [(ngModel)]="newSource.source_name"
+                placeholder="e.g., Bank Website, Partner"
+                [disabled]="isCreating()"
+              />
             </div>
             <div class="form-group">
-              <label>Product <span style="color: red;">*</span></label>
+              <label>Product <span style="color: red">*</span></label>
               <select [(ngModel)]="newSource.product_id" [disabled]="isCreating()">
                 <option value="">Select Product</option>
                 <option *ngFor="let product of products()" [value]="product.product_id">
@@ -65,36 +103,42 @@
           } @else if (currentStep() === 2) {
             <!-- Step 2: Columns -->
             <div class="form-group">
-              <label style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem;">
-                Define Source Columns <span style="color: red;">*</span>
+              <label style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem">
+                Define Source Columns <span style="color: red">*</span>
               </label>
-              <p class="hint" style="color: #666; font-size: 0.875rem; margin-bottom: 1.25rem; line-height: 1.5;">
+              <p
+                class="hint"
+                style="color: #666; font-size: 0.875rem; margin-bottom: 1.25rem; line-height: 1.5"
+              >
                 These are the headers expected in your lead upload files for this source.
               </p>
               <div class="column-list">
                 @for (column of newSource.columns; track $index) {
                   <div class="column-item">
-                    <input 
-                      type="text" 
-                      [(ngModel)]="newSource.columns[$index]" 
-                      placeholder="e.g., Customer Name, Email Address" 
-                      [disabled]="isCreating()" 
-                      class="column-input" />
-                    <button 
-                      type="button" 
-                      class="btn btn-danger btn-sm" 
-                      (click)="removeColumn($index)" 
-                      [disabled]="isCreating() || newSource.columns.length === 1">
+                    <input
+                      type="text"
+                      [(ngModel)]="newSource.columns[$index]"
+                      placeholder="e.g., Customer Name, Email Address"
+                      [disabled]="isCreating()"
+                      class="column-input"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-sm"
+                      (click)="removeColumn($index)"
+                      [disabled]="isCreating() || newSource.columns.length === 1"
+                    >
                       Remove
                     </button>
                   </div>
                 }
-                <button 
-                  type="button" 
-                  class="btn btn-secondary btn-sm" 
-                  (click)="addColumn()" 
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  (click)="addColumn()"
                   [disabled]="isCreating()"
-                  style="margin-top: 0.5rem;">
+                  style="margin-top: 0.5rem"
+                >
                   + Add Column
                 </button>
               </div>
@@ -103,16 +147,50 @@
         </div>
         <div class="modal-footer">
           @if (currentStep() === 2) {
-            <button class="btn btn-secondary" (click)="prevStep()" [disabled]="isCreating()">Back</button>
+            <button class="btn btn-secondary" (click)="prevStep()" [disabled]="isCreating()">
+              Back
+            </button>
           }
-          <button class="btn btn-secondary" (click)="closeCreateModal()" [disabled]="isCreating()">Cancel</button>
+          <button class="btn btn-secondary" (click)="closeCreateModal()" [disabled]="isCreating()">
+            Cancel
+          </button>
           @if (currentStep() === 1) {
-            <button class="btn btn-primary" (click)="nextStep()" [disabled]="isCreating()">Next</button>
+            <button class="btn btn-primary" (click)="nextStep()" [disabled]="isCreating()">
+              Next
+            </button>
           } @else if (currentStep() === 2) {
             <button class="btn btn-primary" (click)="onCreateSource()" [disabled]="isCreating()">
               {{ isCreating() ? 'Creating...' : 'Create Source' }}
             </button>
           }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Columns Modal -->
+  @if (showColumnsModal()) {
+    <div class="modal-overlay" (click)="closeColumnsModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ selectedSource()?.source_name }} - All Columns</h2>
+          <button class="btn-close" (click)="closeColumnsModal()">×</button>
+        </div>
+        <div class="modal-body">
+          @if (selectedSource(); as source) {
+            @if (source.columns && source.columns.length > 0) {
+              <ul class="columns-list">
+                @for (column of source.columns; track $index) {
+                  <li>{{ column }}</li>
+                }
+              </ul>
+            } @else {
+              <p>No columns defined</p>
+            }
+          }
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeColumnsModal()">Close</button>
         </div>
       </div>
     </div>

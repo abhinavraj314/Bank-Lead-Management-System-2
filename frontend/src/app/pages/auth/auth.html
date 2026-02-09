@@ -1,0 +1,170 @@
+<div class="auth-container">
+  <div class="auth-card">
+    <h1>{{ isLogin ? 'Login' : 'Sign Up' }}</h1>
+
+    <div *ngIf="errorMessage" class="alert alert-error">
+      {{ errorMessage }}
+    </div>
+
+    <div *ngIf="successMessage" class="alert alert-success">
+      {{ successMessage }}
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div *ngIf="isLogin" class="form-group">
+      <form (ngSubmit)="login()">
+        <div class="input-group">
+          <label for="login-username">Username or Email</label>
+          <input
+            id="login-username"
+            type="text"
+            [(ngModel)]="loginUsername"
+            name="username"
+            placeholder="Enter your username or email"
+            required
+          />
+        </div>
+
+        <div class="input-group">
+          <label for="login-password">Password</label>
+          <div class="password-input-wrapper">
+            <input
+              id="login-password"
+              [type]="showLoginPassword ? 'text' : 'password'"
+              [(ngModel)]="loginPassword"
+              name="password"
+              placeholder="Enter your password"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="toggleLoginPasswordVisibility()"
+              title="Toggle password visibility"
+            >
+              <svg
+                *ngIf="!showLoginPassword"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg
+                *ngIf="showLoginPassword"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                ></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" [disabled]="loading" class="btn btn-primary">
+          {{ loading ? 'Logging in...' : 'Login' }}
+        </button>
+      </form>
+    </div>
+
+    <!-- SIGNUP FORM -->
+    <div *ngIf="!isLogin" class="form-group">
+      <form (ngSubmit)="signup()">
+        <div class="input-group">
+          <label for="signup-username">Username</label>
+          <input
+            id="signup-username"
+            type="text"
+            [(ngModel)]="signupUsername"
+            name="username"
+            placeholder="Choose a username"
+            required
+          />
+        </div>
+
+        <div class="input-group">
+          <label for="signup-email">Email</label>
+          <input
+            id="signup-email"
+            type="email"
+            [(ngModel)]="signupEmail"
+            name="email"
+            placeholder="Enter your email"
+            required
+          />
+        </div>
+
+        <div class="input-group">
+          <label for="signup-password">Password</label>
+          <div class="password-input-wrapper">
+            <input
+              id="signup-password"
+              [type]="showSignupPassword ? 'text' : 'password'"
+              [(ngModel)]="signupPassword"
+              name="password"
+              placeholder="Create a password"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="toggleSignupPasswordVisibility()"
+              title="Toggle password visibility"
+            >
+              <svg
+                *ngIf="!showSignupPassword"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg
+                *ngIf="showSignupPassword"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                ></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="signup-role">Role</label>
+          <select id="signup-role" [(ngModel)]="signupRole" name="role" required>
+            <option value="USER">User</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+
+        <button type="submit" [disabled]="loading" class="btn btn-primary">
+          {{ loading ? 'Creating account...' : 'Sign Up' }}
+        </button>
+      </form>
+    </div>
+
+    <div class="toggle-section">
+      <p>
+        {{ isLogin ? "Don't have an account?" : 'Already have an account?' }}
+        <button type="button" (click)="toggleMode()" class="btn-link">
+          {{ isLogin ? 'Sign Up' : 'Login' }}
+        </button>
+      </p>
+    </div>
+  </div>
+</div>

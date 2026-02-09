@@ -1,0 +1,56 @@
+bank-leads-java/bank-leads-backend/
+├── pom.xml
+├── application.yml
+├── src/main/
+│   ├── java/com/bankleads/bank_leads_backend/
+│   │   ├── BankLeadsBackendApplication.java
+│   │   ├── config/
+│   │   │   ├── GlobalExceptionHandler.java
+│   │   │   ├── MongoConfig.java
+│   │   │   └── WebConfig.java
+│   │   ├── controller/
+│   │   │   ├── CanonicalFieldController.java
+│   │   │   ├── DeduplicationController.java
+│   │   │   ├── HealthController.java
+│   │   │   ├── LeadController.java
+│   │   │   ├── ProductController.java
+│   │   │   ├── SourceController.java
+│   │   │   └── UserController.java
+│   │   ├── dto/
+│   │   │   ├── request/
+│   │   │   │   ├── CreateLeadRequest.java
+│   │   │   │   ├── CreateProductRequest.java
+│   │   │   │   ├── CreateSourceRequest.java
+│   │   │   │   ├── CreateUserRequest.java
+│   │   │   │   └── LeadUploadRequest.java
+│   │   │   └── response/
+│   │   │       ├── ApiResponse.java
+│   │   │       ├── LeadDTO.java
+│   │   │       └── UserResponse.java
+│   │   ├── model/
+│   │   │   ├── CanonicalField.java
+│   │   │   ├── Lead.java
+│   │   │   ├── Product.java
+│   │   │   ├── Source.java
+│   │   │   └── User.java
+│   │   ├── repository/
+│   │   │   ├── CanonicalFieldRepository.java
+│   │   │   ├── LeadRepository.java
+│   │   │   ├── ProductRepository.java
+│   │   │   ├── SourceRepository.java
+│   │   │   └── UserRepository.java
+│   │   ├── service/
+│   │   │   ├── CanonicalFieldDeduplicationService.java
+│   │   │   ├── DeduplicationService.java
+│   │   │   ├── LeadScoringService.java
+│   │   │   ├── LeadService.java
+│   │   │   └── UserService.java
+│   │   └── util/
+│   │       ├── CsvParserUtil.java
+│   │       ├── CsvValidationUtil.java
+│   │       ├── ExcelParserUtil.java
+│   │       ├── LeadNormalizationUtil.java
+│   │       └── ResponseUtil.java
+│   └── resources/
+│       └── application.properties
+└── src/test/...

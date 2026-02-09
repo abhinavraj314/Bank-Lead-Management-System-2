@@ -15,6 +15,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,6 +30,8 @@ public class SourceController {
     private final SourceRepository sourceRepository;
     private final LeadRepository leadRepository;
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Source>> createSource(@Valid @RequestBody CreateSourceRequest request) {
         // ✅ FIXED - Use getSId() and getSName()
@@ -101,6 +104,8 @@ public class SourceController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<Source>> updateSource(
             @PathVariable String id,
@@ -119,6 +124,8 @@ public class SourceController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Object>> deleteSource(@PathVariable String id) {
         String sId = id.toUpperCase();

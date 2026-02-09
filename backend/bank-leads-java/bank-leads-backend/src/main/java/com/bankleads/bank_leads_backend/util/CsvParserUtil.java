@@ -1,5 +1,6 @@
 package com.bankleads.bank_leads_backend.util;
 
+import com.bankleads.bank_leads_backend.model.CanonicalField;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
@@ -51,8 +52,21 @@ public class CsvParserUtil {
         public Map<String, String> getData() { return data; }
         public List<String> getErrors() { return errors; }
     }
-    
+
+    /**
+     * Backwards-compatible parse method (no validation)
+     */
     public static ParseResult parseCSV(byte[] fileBuffer) {
+        return parseCSV(fileBuffer, null);
+    }
+
+    /**
+     * Parse CSV with optional canonical field validation
+     * @param fileBuffer CSV file content
+     * @param canonicalFields List of canonical fields for validation (can be null for no validation)
+     * @return ParseResult with validated rows
+     */
+    public static ParseResult parseCSV(byte[] fileBuffer, List<CanonicalField> canonicalFields) {
         try {
             String content = new String(fileBuffer, StandardCharsets.UTF_8);
             
@@ -73,20 +87,57 @@ public class CsvParserUtil {
             log.info("CSV headers parsed: {}", headers);
             Map<String, String> headerMapping = LeadNormalizationUtil.normalizeHeaders(headers.toArray(new String[0]));
             log.info("CSV header mapping (original->canonical): {}", headerMapping);
-            
+
+            // If canonical fields provided, validate field count and headers first
+            if (canonicalFields != null && !canonicalFields.isEmpty()) {
+                CsvValidationUtil.ValidationResult countValidation = CsvValidationUtil.validateFieldCount(headers, canonicalFields);
+                if (!countValidation.isValid()) {
+                    return new ParseResult(false, 0, Collections.emptyList(),
+                            Collections.singletonList(new ParsedRow(1, Collections.emptyMap(), Collections.emptyMap(), countValidation.getErrors())));
+                }
+
+                CsvValidationUtil.ValidationResult headerValidation = CsvValidationUtil.validateHeaders(headers, canonicalFields);
+                if (!headerValidation.isValid()) {
+                    return new ParseResult(false, 0, Collections.emptyList(),
+                            Collections.singletonList(new ParsedRow(1, Collections.emptyMap(), Collections.emptyMap(), headerValidation.getErrors())));
+                }
+            }
+
+            // Create field map for data type validation
+            Map<String, CanonicalField> fieldMap = new HashMap<>();
+            if (canonicalFields != null) {
+                for (CanonicalField field : canonicalFields) {
+                    if (field.getIsActive() != null && field.getIsActive()) {
+                        String normalizedName = field.getFieldName().toLowerCase().trim();
+                        fieldMap.put(normalizedName, field);
+                    }
+                }
+            }
+
             List<ParsedRow> validRows = new ArrayList<>();
             List<ParsedRow> invalidRows = new ArrayList<>();
-            
+
             for (int i = 0; i < records.size(); i++) {
                 CSVRecord record = records.get(i);
                 int rowNumber = i + 2; // +2 because index is 0-based and we skip header row
-                
+
                 try {
                     Map<String, String> rowData = new HashMap<>();
                     for (String header : headers) {
                         rowData.put(header, record.get(header));
                     }
-                    
+
+                    // If canonical fields present, validate row data types & required fields
+                    if (canonicalFields != null && !canonicalFields.isEmpty()) {
+                        CsvValidationUtil.ValidationResult rowValidation = CsvValidationUtil.validateRow(rowData, fieldMap, headerMapping);
+                        if (!rowValidation.isValid()) {
+                            Map<String, String> normalized = LeadNormalizationUtil.normalizeRowValues(rowData, headerMapping);
+                            invalidRows.add(new ParsedRow(rowNumber, rowData, normalized, rowValidation.getErrors()));
+                            log.warn("Row {} failed validation: {}", rowNumber, rowValidation.getErrors());
+                            continue;
+                        }
+                    }
+
                     Map<String, String> normalized = LeadNormalizationUtil.normalizeRowValues(rowData, headerMapping);
 
                     // Provide more detailed identifier validation errors (email/phone/aadhar format issues)
@@ -104,7 +155,7 @@ public class CsvParserUtil {
                     if (hadAadharValue && !normalized.containsKey("aadhar_number")) {
                         identifierIssues.add("Invalid aadhar number");
                     }
-                    
+
                     if (!LeadNormalizationUtil.validateIdentifiers(normalized)) {
                         List<String> errors = new ArrayList<>();
                         if (!identifierIssues.isEmpty()) {
@@ -115,7 +166,7 @@ public class CsvParserUtil {
                         log.warn("Row {} failed identifier validation: {}", rowNumber, errors);
                         continue;
                     }
-                    
+
                     validRows.add(new ParsedRow(rowNumber, rowData, normalized, Collections.emptyList()));
                 } catch (Exception e) {
                     String msg = e.getMessage() != null ? e.getMessage() : "Failed to parse row";
@@ -124,7 +175,7 @@ public class CsvParserUtil {
                     log.error("Row {} failed during CSV parsing: {}", rowNumber, msg, e);
                 }
             }
-            
+
             return new ParseResult(validRows.size() > 0, records.size(), validRows, invalidRows);
         } catch (IOException e) {
             return new ParseResult(false, 0, Collections.emptyList(),
