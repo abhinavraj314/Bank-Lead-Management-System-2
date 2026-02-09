@@ -3,28 +3,33 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SourceService } from '../../services/source.service';
 import { ProductService } from '../../services/product.service';
+import { ApiService } from '../../services/api.service';
 import { Source } from '../../models/lead.models';
 
 @Component({
   selector: 'app-sources',
   imports: [CommonModule, FormsModule],
   templateUrl: './sources.html',
-  styleUrl: './sources.css'
+  styleUrl: './sources.css',
 })
 export class SourcesPage implements OnInit {
   private readonly sourceService = inject(SourceService);
   private readonly productService = inject(ProductService);
-  
+  private readonly apiService = inject(ApiService);
+
   protected readonly sources = signal<Source[]>([]);
   protected readonly products = signal<{ product_id: string; product_name: string }[]>([]);
   protected readonly showCreateModal = signal<boolean>(false);
   protected readonly isCreating = signal<boolean>(false);
+  protected readonly isDeleting = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
   protected readonly currentStep = signal<number>(1); // 1: Source details, 2: Columns
+  protected readonly showColumnsModal = signal<boolean>(false);
+  protected readonly selectedSource = signal<Source | null>(null);
   protected newSource: { source_name: string; product_id: string; columns: string[] } = {
     source_name: '',
     product_id: '',
-    columns: [''] // Start with one empty column
+    columns: [''], // Start with one empty column
   };
 
   ngOnInit(): void {
@@ -32,26 +37,37 @@ export class SourcesPage implements OnInit {
     this.loadProducts();
   }
 
+  isAdmin(): boolean {
+    return this.apiService.isAdmin();
+  }
+
   loadSources(): void {
-    this.sourceService.getSources().subscribe(sources => {
+    this.sourceService.getSources().subscribe((sources) => {
       // Add mock status
-      const sourcesWithStatus: Source[] = sources.map(s => ({
+      const sourcesWithStatus: Source[] = sources.map((s) => ({
         ...s,
-        status: 'active'
+        status: 'active',
       }));
       this.sources.set(sourcesWithStatus);
     });
   }
 
   loadProducts(): void {
-    this.productService.getProducts().subscribe(products => {
+    this.productService.getProducts().subscribe((products) => {
       this.products.set(products);
     });
   }
 
   getProductName(productId: string): string {
-    const product = this.products().find(p => p.product_id === productId);
+    const product = this.products().find((p) => p.product_id === productId);
     return product?.product_name || '-';
+  }
+
+  getColumnsDisplay(columns: string[] | undefined): string {
+    if (!columns || columns.length === 0) {
+      return '-';
+    }
+    return columns.join(', ');
   }
 
   openCreateModal(): void {
@@ -99,7 +115,7 @@ export class SourcesPage implements OnInit {
 
   onCreateSource(): void {
     // Validate columns
-    const validColumns = this.newSource.columns.filter(c => c.trim() !== '');
+    const validColumns = this.newSource.columns.filter((c) => c.trim() !== '');
     if (validColumns.length === 0) {
       this.errorMessage.set('At least one column is required');
       return;
@@ -111,20 +127,58 @@ export class SourcesPage implements OnInit {
     // Generate s_id from source name
     const sId = this.newSource.source_name.toUpperCase().replace(/\s+/g, '_');
 
-    this.sourceService.createSource({
-      s_id: sId,
-      s_name: this.newSource.source_name.trim(),
-      p_id: this.newSource.product_id,
-      columns: validColumns
-    }).subscribe({
+    this.sourceService
+      .createSource({
+        s_id: sId,
+        s_name: this.newSource.source_name.trim(),
+        p_id: this.newSource.product_id,
+        columns: validColumns,
+      })
+      .subscribe({
+        next: () => {
+          this.loadSources(); // Reload from backend
+          this.closeCreateModal();
+        },
+        error: (error) => {
+          this.isCreating.set(false);
+          this.errorMessage.set(error.message || 'Failed to create source');
+        },
+      });
+  }
+
+  getColumnsPreview(columns: string[] | undefined): string {
+    if (!columns || columns.length === 0) {
+      return '-';
+    }
+    // Show first 3 columns
+    return columns.slice(0, 3).join(', ') + (columns.length > 3 ? '...' : '');
+  }
+
+  openColumnsModal(source: Source): void {
+    this.selectedSource.set(source);
+    this.showColumnsModal.set(true);
+  }
+
+  closeColumnsModal(): void {
+    this.showColumnsModal.set(false);
+    this.selectedSource.set(null);
+  }
+
+  onDeleteSource(sourceId: string): void {
+    if (!confirm('Are you sure you want to delete this source? This action cannot be undone.')) {
+      return;
+    }
+
+    this.isDeleting.set(true);
+    this.sourceService.deleteSource(sourceId).subscribe({
       next: () => {
-        this.loadSources(); // Reload from backend
-        this.closeCreateModal();
+        this.loadSources();
+        this.isDeleting.set(false);
       },
       error: (error) => {
-        this.isCreating.set(false);
-        this.errorMessage.set(error.message || 'Failed to create source');
-      }
+        this.isDeleting.set(false);
+        alert('Failed to delete source: ' + (error.message || 'Unknown error'));
+      },
     });
   }
 }

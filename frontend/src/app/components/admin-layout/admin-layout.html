@@ -3,16 +3,22 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h2 class="sidebar-title">Lead Management</h2>
-      <p class="sidebar-subtitle">Admin</p>
+      <p class="sidebar-subtitle">{{ isAdmin ? 'Admin' : 'User' }}</p>
     </div>
     <nav class="sidebar-nav">
-      <a 
-        *ngFor="let item of navItems" 
-        [routerLink]="item.path" 
+      <a
+        *ngFor="let item of navItems"
+        [routerLink]="item.path"
         routerLinkActive="active"
         class="nav-item"
       >
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg
+          class="nav-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+        >
           <ng-container [ngSwitch]="item.icon">
             <g *ngSwitchCase="'dashboard'">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -24,8 +30,7 @@
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </g>
-            
-            
+
             <g *ngSwitchCase="'fields'">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <path d="M14 2v6h6"></path>
@@ -37,13 +42,16 @@
               <rect x="3" y="4" width="18" height="6" rx="2"></rect>
               <rect x="3" y="14" width="18" height="6" rx="2"></rect>
             </g>
-            
+
             <path *ngSwitchCase="'sources'" d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
             <g *ngSwitchCase="'rules'">
               <path d="M9 11l3 3L22 4"></path>
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
             </g>
-            <path *ngSwitchCase="'ranking'" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+            <path
+              *ngSwitchCase="'ranking'"
+              d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+            ></path>
           </ng-container>
         </svg>
         <span class="nav-label">{{ item.label }}</span>
@@ -53,6 +61,37 @@
 
   <!-- Main Content -->
   <main class="main-content">
+    <header class="top-bar">
+      <button class="menu-toggle" (click)="toggleSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <div class="top-bar-content">
+        <h1>Bank Lead Management System</h1>
+      </div>
+      <!-- User Profile Section -->
+      <div class="user-profile-box">
+        <div class="user-profile-info">
+          <div class="user-avatar-small">{{ currentUser?.username?.charAt(0)?.toUpperCase() }}</div>
+          <div class="user-info-small">
+            <div class="user-name-small">{{ currentUser?.username }}</div>
+            <div class="user-role-small" [class.admin]="isAdmin">
+              {{ currentUser?.role || 'USER' }}
+            </div>
+          </div>
+        </div>
+        <button (click)="logout()" class="logout-btn-small" title="Logout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
     <router-outlet />
   </main>
 </div>

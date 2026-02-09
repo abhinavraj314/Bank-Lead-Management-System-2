@@ -4,7 +4,7 @@ import { Source, BackendSource, ApiResponse, Page } from '../models/lead.models'
 import { ApiService } from './api.service';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class SourceService {
   constructor(private apiService: ApiService) {}
@@ -26,25 +26,26 @@ export class SourceService {
         // Extract sources from Page wrapper
         const page = response.data;
         const sources = page.content || [];
-        
+
         // Map backend camelCase fields to frontend snake_case fields
         return sources.map((backendSource: BackendSource) => {
           // Normalize status if provided by backend, otherwise undefined
           const backendStatus = (backendSource as any).status;
           let normalizedStatus: 'active' | 'inactive' | undefined = undefined;
-          
+
           if (backendStatus && typeof backendStatus === 'string') {
             const lowerStatus = backendStatus.toLowerCase();
             if (lowerStatus === 'active' || lowerStatus === 'inactive') {
               normalizedStatus = lowerStatus as 'active' | 'inactive';
             }
           }
-          
+
           return {
             source_id: backendSource.sId,
             source_name: backendSource.sName,
             product_id: backendSource.pId,
-            status: normalizedStatus
+            status: normalizedStatus,
+            columns: backendSource.columns || [],
           };
         });
       }),
@@ -52,7 +53,7 @@ export class SourceService {
         console.error('Error fetching sources:', error);
         // Return empty array on error to prevent UI breakage
         return of([]);
-      })
+      }),
     );
   }
 
@@ -69,7 +70,7 @@ export class SourceService {
     const requestBody: any = {
       s_id: source.s_id.toUpperCase(),
       s_name: source.s_name,
-      p_id: source.p_id.toUpperCase()
+      p_id: source.p_id.toUpperCase(),
     };
 
     // Add columns to request payload if provided
@@ -80,7 +81,8 @@ export class SourceService {
     return this.apiService.post<ApiResponse<BackendSource>>('/sources', requestBody).pipe(
       map((response) => {
         if (!response.success || !response.data) {
-          const errorMessage = response.error?.message || response.message || 'Failed to create source';
+          const errorMessage =
+            response.error?.message || response.message || 'Failed to create source';
           throw new Error(errorMessage);
         }
 
@@ -89,13 +91,31 @@ export class SourceService {
           source_id: backendSource.sId,
           source_name: backendSource.sName,
           product_id: backendSource.pId,
-          status: 'active' as const
+          status: 'active' as const,
         };
       }),
       catchError((error) => {
         // Re-throw to let component handle errors
         throw error;
-      })
+      }),
+    );
+  }
+
+  /**
+   * Delete a source by source_id
+   */
+  deleteSource(sourceId: string): Observable<void> {
+    return this.apiService.delete<ApiResponse<void>>(`/sources/${sourceId.toUpperCase()}`).pipe(
+      map((response) => {
+        if (!response.success) {
+          const errorMessage =
+            response.error?.message || response.message || 'Failed to delete source';
+          throw new Error(errorMessage);
+        }
+      }),
+      catchError((error) => {
+        throw error;
+      }),
     );
   }
 }

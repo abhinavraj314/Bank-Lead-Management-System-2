@@ -2,16 +2,21 @@ package com.bankleads.bank_leads_backend.controller;
 
 import com.bankleads.bank_leads_backend.dto.request.CreateLeadRequest;
 import com.bankleads.bank_leads_backend.dto.response.ApiResponse;
+import com.bankleads.bank_leads_backend.dto.response.LeadDTO;
 import com.bankleads.bank_leads_backend.model.CanonicalField;
 import com.bankleads.bank_leads_backend.model.Lead;
+import com.bankleads.bank_leads_backend.model.Product;
 import com.bankleads.bank_leads_backend.model.Source;
 import com.bankleads.bank_leads_backend.repository.CanonicalFieldRepository;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
 import com.bankleads.bank_leads_backend.repository.ProductRepository;
 import com.bankleads.bank_leads_backend.repository.SourceRepository;
+import com.bankleads.bank_leads_backend.service.CanonicalFieldDeduplicationService;
+import com.bankleads.bank_leads_backend.service.DeduplicationService;
 import com.bankleads.bank_leads_backend.service.LeadScoringService;
 import com.bankleads.bank_leads_backend.service.LeadService;
 import com.bankleads.bank_leads_backend.util.CsvParserUtil;
+import com.bankleads.bank_leads_backend.util.CsvValidationUtil;
 import com.bankleads.bank_leads_backend.util.LeadNormalizationUtil;
 import com.bankleads.bank_leads_backend.util.ResponseUtil;
 import jakarta.validation.Valid;
@@ -31,6 +36,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -50,8 +56,11 @@ public class LeadController {
     private final CanonicalFieldRepository canonicalFieldRepository;
     private final LeadService leadService;
     private final LeadScoringService leadScoringService;
+    private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
     private final MongoTemplate mongoTemplate;
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/upload")
     public ResponseEntity<ApiResponse<Map<String, Object>>> uploadLeads(
             @RequestParam("file") MultipartFile file,
@@ -114,11 +123,17 @@ public class LeadController {
                 }
             }
 
+            // Get active canonical fields for validation
+            List<CanonicalField> activeCanonicalFields = canonicalPage.getContent().stream()
+                    .filter(f -> f.getIsActive() != null && f.getIsActive())
+                    .collect(Collectors.toList());
+            
             List<RowCtx> rows = new ArrayList<>();
             String filename = file.getOriginalFilename().toLowerCase();
             
             if (filename.endsWith(".csv")) {
-                CsvParserUtil.ParseResult parseResult = CsvParserUtil.parseCSV(file.getBytes());
+                // Parse CSV with canonical field validation (field count + datatype + required fields)
+                CsvParserUtil.ParseResult parseResult = CsvParserUtil.parseCSV(file.getBytes(), activeCanonicalFields);
 
                 // Log parse-stage failures (headers and mapping are logged inside CsvParserUtil)
                 if (!parseResult.getInvalidRows().isEmpty()) {
@@ -136,13 +151,13 @@ public class LeadController {
                             parseResult.getInvalidRows().stream().map(r -> Map.of(
                                     "rowNumber", r.getRow(),
                                     "reason", String.join("; ", r.getErrors()),
-                                    "rawInput", r.getRaw()
+                                    "rawInput", r.getData()
                             )).collect(Collectors.toList()));
                 }
                 
                 for (CsvParserUtil.ParsedRow parsedRow : parseResult.getValidRows()) {
                     // parsedRow.getRow() is the CSV line number (header is row 1)
-                    rows.add(new RowCtx(parsedRow.getRow() - 1, parsedRow.getRaw(), parsedRow.getData()));
+                    rows.add(new RowCtx(parsedRow.getRow() - 1, parsedRow.getData(), parsedRow.getData()));
                 }
             } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
                 Workbook workbook = WorkbookFactory.create(file.getInputStream());
@@ -164,6 +179,31 @@ public class LeadController {
                 log.info("Excel headers parsed: {}", headers);
                 log.info("Excel header mapping (original->canonical): {}", headerMapping);
                 
+                // Validate field count for Excel
+                CsvValidationUtil.ValidationResult countValidation = CsvValidationUtil.validateFieldCount(headers, activeCanonicalFields);
+                if (!countValidation.isValid()) {
+                    log.warn("Excel field count validation failed: {}", String.join("; ", countValidation.getErrors()));
+                    return ResponseUtil.error("Excel validation failed: " + String.join("; ", countValidation.getErrors()),
+                            HttpStatus.BAD_REQUEST);
+                }
+                
+                // Validate headers for Excel
+                CsvValidationUtil.ValidationResult headerValidation = CsvValidationUtil.validateHeaders(headers, activeCanonicalFields);
+                if (!headerValidation.isValid()) {
+                    log.warn("Excel header validation failed: {}", String.join("; ", headerValidation.getErrors()));
+                    return ResponseUtil.error("Excel validation failed: " + String.join("; ", headerValidation.getErrors()),
+                            HttpStatus.BAD_REQUEST);
+                }
+                
+                // Create field map for Excel data type validation
+                Map<String, CanonicalField> fieldMap = new HashMap<>();
+                for (CanonicalField field : activeCanonicalFields) {
+                    String normalizedName = field.getFieldName().toLowerCase().trim();
+                    fieldMap.put(normalizedName, field);
+                }
+                
+                List<Map<String, Object>> excelInvalidRows = new ArrayList<>();
+                
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row == null) continue;
@@ -174,6 +214,18 @@ public class LeadController {
                         rowData.put(headers.get(j), getCellValueAsString(cell));
                     }
                     
+                    // Validate row data types and required fields
+                    CsvValidationUtil.ValidationResult rowValidation = CsvValidationUtil.validateRow(rowData, fieldMap, headerMapping);
+                    if (!rowValidation.isValid()) {
+                        log.warn("Row {} failed Excel datatype validation: {}", i, String.join("; ", rowValidation.getErrors()));
+                        excelInvalidRows.add(Map.of(
+                                "rowNumber", i,
+                                "reason", String.join("; ", rowValidation.getErrors()),
+                                "rawInput", rowData
+                        ));
+                        continue;
+                    }
+                    
                     Map<String, String> normalized = LeadNormalizationUtil.normalizeRowValues(rowData, headerMapping);
                     
                     if (LeadNormalizationUtil.validateIdentifiers(normalized)) {
@@ -182,7 +234,20 @@ public class LeadController {
                     } else {
                         log.warn("Row {} failed identifier validation (Excel): rawKeys={}, normalizedKeys={}",
                                 i, rowData.keySet(), normalized.keySet());
+                        excelInvalidRows.add(Map.of(
+                                "rowNumber", i,
+                                "reason", "At least one identifier (phone_number, email, or aadhar_number) is required",
+                                "rawInput", rowData
+                        ));
                     }
+                }
+                
+                // Return error if any Excel rows failed validation
+                if (!excelInvalidRows.isEmpty()) {
+                    log.warn("Lead upload rejected: Excel file has invalid rows (invalidCount={})", excelInvalidRows.size());
+                    return ResponseUtil.error("Excel file contains validation errors",
+                            HttpStatus.BAD_REQUEST,
+                            excelInvalidRows.stream().limit(100).collect(Collectors.toList()));
                 }
                 
                 workbook.close();
@@ -242,6 +307,24 @@ public class LeadController {
 
             log.info("Lead upload completed: totalRows={}, insertedCount={}, mergedCount={}, failedCount={} (p_id={}, source_id={})",
                     rows.size(), insertedCount, mergedCount, failedCount, pIdUpper, sourceIdUpper);
+
+            // Run automatic deduplication based on canonical fields as soon as leads are uploaded
+            try {
+                DeduplicationService.DeduplicationStats dedupStats = canonicalFieldDeduplicationService.runDeduplicationFromCanonicalFields();
+                responseData.put("deduplication", Map.of(
+                        "totalLeadsBefore", dedupStats.getTotalLeads(),
+                        "duplicatesFound", dedupStats.getDuplicatesFound(),
+                        "mergedCount", dedupStats.getMergedCount(),
+                        "finalLeadCount", dedupStats.getFinalCount()
+                ));
+                log.info("Automatic deduplication after upload: mergedCount={}, finalLeadCount={}",
+                        dedupStats.getMergedCount(), dedupStats.getFinalCount());
+            } catch (Exception e) {
+                log.warn("Automatic deduplication after upload failed (upload succeeded): {}", e.getMessage());
+                responseData.put("deduplication", Map.of(
+                        "error", e.getMessage() != null ? e.getMessage() : "Deduplication failed"
+                ));
+            }
             
             return ResponseUtil.success(responseData, "Upload completed");
         } catch (Exception e) {
@@ -273,7 +356,7 @@ public class LeadController {
     }
     
     @GetMapping
-    public ResponseEntity<ApiResponse<Page<Lead>>> getLeads(
+    public ResponseEntity<ApiResponse<Page<LeadDTO>>> getLeads(
             @RequestParam(required = false) String p_id,
             @RequestParam(required = false) String source_id,
             @RequestParam(required = false) String from,
@@ -320,10 +403,35 @@ public class LeadController {
         long total = mongoTemplate.count(query, Lead.class);
         List<Lead> leads = mongoTemplate.find(query.with(pageable), Lead.class);
         
-        Page<Lead> leadPage = new PageImpl<>(leads, pageable, total);
+        // Enrich leads with product and source names
+        List<LeadDTO> enrichedLeads = leads.stream().map(lead -> {
+            String productName = lead.getPId() != null ? 
+                productRepository.findByPId(lead.getPId())
+                    .map(Product::getPName)
+                    .orElse("") : "";
+            
+            String sourceName = lead.getSourceId() != null ? 
+                sourceRepository.findBySourceId(lead.getSourceId())
+                    .map(Source::getSName)
+                    .orElse("") : "";
+            
+            return LeadDTO.builder()
+                    .leadId(lead.getLeadId())
+                    .name(lead.getName())
+                    .email(lead.getEmail())
+                    .phoneNumber(lead.getPhoneNumber())
+                    .aadharNumber(lead.getAadharNumber())
+                    .pId(lead.getPId())
+                    .productName(productName)
+                    .sourceId(lead.getSourceId())
+                    .sourceName(sourceName)
+                    .createdAt(lead.getCreatedAt())
+                    .build();
+        }).collect(Collectors.toList());
         
-        // ✅ FIXED LINE 249 - Direct ResponseEntity creation
-        ApiResponse<Page<Lead>> response = new ApiResponse<>();
+        Page<LeadDTO> leadPage = new PageImpl<>(enrichedLeads, pageable, total);
+        
+        ApiResponse<Page<LeadDTO>> response = new ApiResponse<>();
         response.setData(leadPage);
         response.setMessage("Leads retrieved successfully");
         response.setSuccess(true);
@@ -338,6 +446,8 @@ public class LeadController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Lead>> createLead(@Valid @RequestBody CreateLeadRequest request) {
         if (request.getPhoneNumber() == null && request.getEmail() == null && request.getAadharNumber() == null) {
@@ -379,6 +489,8 @@ public class LeadController {
                 HttpStatus.CREATED);
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<Lead>> updateLead(
             @PathVariable String id,
@@ -429,6 +541,8 @@ public class LeadController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Object>> deleteLead(@PathVariable String id) {
         return leadRepository.findByLeadId(id)

@@ -3,35 +3,144 @@
     <h1 class="page-title">Deduplication Rules</h1>
   </div>
 
-  <div class="content-card">
-    <p class="description">
-      Leads are considered duplicates if selected fields match
+  <!-- Info Banner -->
+  <div class="info-banner">
+    <span class="info-icon">ℹ️</span>
+    <p class="info-text">
+      @if (isAdmin()) {
+        Deduplication rules are defined per product. Select a product first to configure which
+        canonical fields should be used to identify duplicate leads.
+      } @else {
+        Canonical fields used to identify duplicate leads across all products.
+      }
     </p>
+  </div>
 
-    <div class="fields-list">
-      <div class="field-item" *ngFor="let field of fields()">
-        <label class="checkbox-label">
-          <input 
-            type="checkbox" 
-            [checked]="field.field_id && isFieldSelected(field.field_id)"
-            (change)="field.field_id && toggleField(field.field_id)"
-          />
-          <span class="field-info">
-            <span class="field-name">{{ field.display_name }}</span>
-            <span class="field-meta">({{ field.field_name }} - {{ field.type }})</span>
-          </span>
-        </label>
+  <div class="content-card">
+    <!-- Admin View: Step 1 - Product Selection -->
+    @if (isAdmin()) {
+      <div class="section">
+        <h2 class="section-title">Step 1: Select Product</h2>
+
+        <div class="form-group">
+          <label>Product <span class="required">*</span></label>
+          <select
+            [(ngModel)]="selectedProduct"
+            (change)="onProductChanged(selectedProduct())"
+            class="product-select"
+          >
+            <option value="">-- Select a Product --</option>
+            <option *ngFor="let product of products()" [value]="product.product_id">
+              {{ product.product_name }}
+            </option>
+          </select>
+        </div>
+
+        @if (selectedProduct()) {
+          <p class="product-selected">
+            ✓ Product selected: <strong>{{ getProductName(selectedProduct()) }}</strong>
+          </p>
+        }
       </div>
-    </div>
 
-    <div class="actions">
-      <button 
-        class="btn btn-primary" 
+      <!-- Admin View: Step 2 - Canonical Fields Selection (only shown after product selection) -->
+      @if (selectedProduct()) {
+        <div class="section">
+          <h2 class="section-title">Step 2: Select Canonical Fields for Deduplication</h2>
+          <p class="section-description">
+            Choose which fields should be compared to identify duplicate leads for this product.
+            Leads are considered duplicates if all selected fields match.
+          </p>
+
+          @if (fields().length === 0) {
+            <p class="empty-fields-message">
+              No canonical fields available. Please create canonical fields first.
+            </p>
+          } @else {
+            <div class="fields-list">
+              <div class="field-item" *ngFor="let field of fields()">
+                <label class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    [checked]="field.field_id && isFieldSelected(field.field_id)"
+                    (change)="field.field_id && toggleField(field.field_id)"
+                  />
+                  <span class="field-info">
+                    <span class="field-name">{{ field.display_name }}</span>
+                    <span class="field-meta">({{ field.field_name }} - {{ field.type }})</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            @if (selectedFields().length > 0) {
+              <p class="fields-selected">
+                ✓ <strong>{{ selectedFields().length }}</strong> field(s) selected for deduplication
+              </p>
+            }
+          }
+        </div>
+      }
+    } @else {
+      <!-- User View: Just show canonical fields -->
+      <div class="section">
+        <h2 class="section-title">Canonical Fields</h2>
+        <p class="section-description">
+          These canonical fields are used to identify duplicate leads in the system.
+        </p>
+
+        @if (fields().length === 0) {
+          <p class="empty-fields-message">No canonical fields available.</p>
+        } @else {
+          <div class="fields-list read-only">
+            <div class="field-item" *ngFor="let field of fields()">
+              <span class="field-info">
+                <span class="field-name">{{ field.display_name }}</span>
+                <span class="field-meta">({{ field.field_name }} - {{ field.type }})</span>
+              </span>
+            </div>
+          </div>
+          <p class="fields-info">
+            <strong>Total:</strong> {{ fields().length }} canonical field(s)
+          </p>
+        }
+      </div>
+    }
+
+    <!-- Error Message -->
+    @if (errorMessage()) {
+      <div class="error-message">
+        <span class="error-icon">✕</span>
+        {{ errorMessage() }}
+      </div>
+    }
+
+    <!-- Success Message -->
+    @if (successMessage()) {
+      <div class="success-message">
+        <span class="success-icon">✓</span>
+        {{ successMessage() }}
+      </div>
+    }
+
+    <!-- Save Button (Admin Only) -->
+    <div class="actions" *ngIf="isAdmin()">
+      <button
+        class="btn btn-primary"
         (click)="onSaveRules()"
-        [disabled]="isSaving()"
+        [disabled]="isSaving() || !selectedProduct()"
       >
         {{ isSaving() ? 'Saving...' : 'Save Deduplication Rules' }}
       </button>
+    </div>
+
+    <!-- Info Banner: Auto-Deduplication -->
+    <div class="info-banner info-banner-auto">
+      <span class="info-icon">🔄</span>
+      <p class="info-text">
+        Deduplication runs automatically whenever leads are uploaded. Check the Upload Leads page
+        for deduplication results and logs.
+      </p>
     </div>
   </div>
 </div>

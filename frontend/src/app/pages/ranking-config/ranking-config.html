@@ -1,9 +1,20 @@
-<div class="ranking-config-page">
+<div class="ranking-config-page" *ngIf="isAdmin()">
   <div class="page-header">
     <h1 class="page-title">Ranking Config</h1>
   </div>
 
   <div class="content-card">
     <p class="placeholder-message">Ranking configuration will be added later</p>
+  </div>
+</div>
+
+<div
+  class="ranking-config-page"
+  *ngIf="!isAdmin()"
+  style="display: flex; align-items: center; justify-content: center; height: 80vh"
+>
+  <div style="text-align: center">
+    <h2>Access Denied</h2>
+    <p>Only administrators can access this page.</p>
   </div>
 </div>

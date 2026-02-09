@@ -2,37 +2,43 @@ import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CanonicalFieldService } from '../../services/canonical-field.service';
+import { ApiService } from '../../services/api.service';
 import { CanonicalField } from '../../models/lead.models';
 
 @Component({
   selector: 'app-canonical-fields',
   imports: [CommonModule, FormsModule],
   templateUrl: './canonical-fields.html',
-  styleUrl: './canonical-fields.css'
+  styleUrl: './canonical-fields.css',
 })
 export class CanonicalFieldsPage implements OnInit {
   private readonly canonicalFieldService = inject(CanonicalFieldService);
-  
+  private readonly apiService = inject(ApiService);
+
   protected readonly fields = signal<CanonicalField[]>([]);
   protected readonly showCreateModal = signal<boolean>(false);
   protected readonly isCreating = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
-  
+
   // Form fields (using regular properties for ngModel binding)
   protected newField: Partial<CanonicalField> = {
     field_name: '',
     display_name: '',
     type: 'String',
     version: 1,
-    status: 'Active'
+    status: 'Active',
   };
 
   ngOnInit(): void {
     this.loadFields();
   }
 
+  isAdmin(): boolean {
+    return this.apiService.isAdmin();
+  }
+
   loadFields(): void {
-    this.canonicalFieldService.getCanonicalFields().subscribe(fields => {
+    this.canonicalFieldService.getCanonicalFields().subscribe((fields) => {
       this.fields.set(fields);
     });
   }
@@ -51,7 +57,7 @@ export class CanonicalFieldsPage implements OnInit {
       display_name: '',
       type: 'String',
       version: 1,
-      status: 'Active'
+      status: 'Active',
     };
   }
 
@@ -72,7 +78,7 @@ export class CanonicalFieldsPage implements OnInit {
 
     // Check if field name already exists (client-side check)
     const existingField = this.fields().find(
-      f => f.field_name.toLowerCase() === this.newField.field_name!.toLowerCase()
+      (f) => f.field_name.toLowerCase() === this.newField.field_name!.toLowerCase(),
     );
     if (existingField) {
       this.errorMessage.set(`Field '${this.newField.field_name}' already exists`);
@@ -89,21 +95,23 @@ export class CanonicalFieldsPage implements OnInit {
     this.isCreating.set(true);
     this.errorMessage.set('');
 
-    this.canonicalFieldService.createCanonicalField({
-      field_name: this.newField.field_name.trim(),
-      display_name: this.newField.display_name.trim(),
-      field_type: this.newField.type as 'String' | 'Number' | 'Date' | 'Boolean',
-      is_active: this.newField.status === 'Active',
-      version: 'v1'
-    }).subscribe({
-      next: () => {
-        this.loadFields(); // Reload from backend
-        this.closeCreateModal();
-      },
-      error: (error) => {
-        this.isCreating.set(false);
-        this.errorMessage.set(error.message || 'Failed to create canonical field');
-      }
-    });
+    this.canonicalFieldService
+      .createCanonicalField({
+        field_name: this.newField.field_name.trim(),
+        display_name: this.newField.display_name.trim(),
+        field_type: this.newField.type as 'String' | 'Number' | 'Date' | 'Boolean',
+        is_active: this.newField.status === 'Active',
+        version: 'v1',
+      })
+      .subscribe({
+        next: () => {
+          this.loadFields(); // Reload from backend
+          this.closeCreateModal();
+        },
+        error: (error) => {
+          this.isCreating.set(false);
+          this.errorMessage.set(error.message || 'Failed to create canonical field');
+        },
+      });
   }
 }
