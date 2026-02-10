@@ -15,6 +15,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +58,8 @@ public class ProductController {
         }
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Product>> createProduct(@Valid @RequestBody CreateProductRequest request) {
         if (productRepository.existsByPId(request.getPId().toUpperCase())) {
@@ -110,6 +113,8 @@ public class ProductController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<Product>> updateProduct(
             @PathVariable String id,
@@ -127,6 +132,8 @@ public class ProductController {
                         HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Object>> deleteProduct(@PathVariable String id) {
         String pId = id.toUpperCase();

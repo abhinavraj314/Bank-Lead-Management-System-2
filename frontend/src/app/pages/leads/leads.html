@@ -1,198 +1,271 @@
 <div class="dashboard">
-    <!-- Lead Upload Section -->
-    <section class="upload-section">
-      <div class="section-card">
-        <h2 class="section-title">Lead Upload</h2>
-        <p class="section-description">
-          Upload CSV or Excel files containing customer leads
-        </p>
-  
-        <div class="upload-area">
-          <div class="upload-icon">📤</div>
-          <p class="upload-text">Select file to upload</p>
-          <p class="upload-hint">Supports CSV, XLS, XLSX files</p>
-  
-          <input
-            type="file"
-            id="fileInput"
-            class="file-input"
-            accept=".csv,.xls,.xlsx"
-            (change)="onFileSelected($event)"
-          />
-          <label for="fileInput" class="btn btn-primary">
-            Choose File
-          </label>
+  <!-- Lead Upload Section (Admin Only) -->
+  <section *ngIf="isAdmin()" class="upload-section">
+    <div class="section-card">
+      <h2 class="section-title">Lead Upload</h2>
+      <p class="section-description">Upload CSV or Excel files containing customer leads</p>
+
+      <div class="upload-area">
+        <div class="upload-icon">📤</div>
+        <p class="upload-text">Select file to upload</p>
+        <p class="upload-hint">Supports CSV, XLS, XLSX files</p>
+
+        <input
+          type="file"
+          id="fileInput"
+          class="file-input"
+          accept=".csv,.xls,.xlsx"
+          (change)="onFileSelected($event)"
+        />
+        <label for="fileInput" class="btn btn-primary"> Choose File </label>
+      </div>
+
+      @if (selectedFileName()) {
+        <div class="selected-file">
+          <span class="file-name"> 📄 {{ selectedFileName() }} </span>
+          <button class="btn-remove" type="button" (click)="clearFile()">✕</button>
         </div>
-  
-        @if (selectedFileName()) {
-          <div class="selected-file">
-            <span class="file-name">
-              📄 {{ selectedFileName() }}
-            </span>
-            <button
-              class="btn-remove"
-              type="button"
-              (click)="clearFile()"
-            >
-              ✕
-            </button>
-          </div>
-        }
-  
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Product</label>
-            <select
-              class="form-select"
-              [ngModel]="selectedProduct()"
-              (ngModelChange)="selectedProduct.set($event)"
-            >
-              <option value="">Select Product</option>
-              @for (product of products(); track product.product_id) {
-                <option [value]="product.product_id">
-                  {{ product.product_name }}
-                </option>
-              }
-            </select>
-          </div>
-  
-          <div class="form-group">
-            <label class="form-label">Source</label>
-            <select
-              class="form-select"
-              [ngModel]="selectedSource()"
-              (ngModelChange)="selectedSource.set($event)"
-            >
-              <option value="">Select Source</option>
-              @for (source of sources(); track source.source_id) {
-                <option [value]="source.source_id">
-                  {{ source.source_name }}
-                </option>
-              }
-            </select>
-          </div>
-        </div>
-  
-        <div class="form-actions">
-          <button
-            class="btn btn-primary"
-            type="button"
-            (click)="onUpload()"
+      }
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Product</label>
+          <select
+            class="form-select"
+            [ngModel]="selectedProduct()"
+            (ngModelChange)="selectedProduct.set($event)"
           >
-            Upload
+            <option value="">Select Product</option>
+            @for (product of products(); track product.product_id) {
+              <option [value]="product.product_id">
+                {{ product.product_name }}
+              </option>
+            }
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Source</label>
+          <select
+            class="form-select"
+            [ngModel]="selectedSource()"
+            (ngModelChange)="selectedSource.set($event)"
+          >
+            <option value="">Select Source</option>
+            @for (source of sources(); track source.source_id) {
+              <option [value]="source.source_id">
+                {{ source.source_name }}
+              </option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button
+          class="btn btn-primary"
+          type="button"
+          (click)="onUpload()"
+          [disabled]="isUploading()"
+        >
+          {{ isUploading() ? 'Uploading...' : 'Upload' }}
+        </button>
+      </div>
+
+      @if (uploadError()) {
+        <div class="alert alert-error" style="margin-top: 1rem">
+          <div class="alert-title">ERROR: {{ uploadError() }}</div>
+        </div>
+      }
+
+      @if (uploadMessage()) {
+        <div
+          class="alert"
+          [ngClass]="uploadError() ? 'alert-warning' : 'alert-success'"
+          style="margin-top: 1rem"
+        >
+          <div class="alert-message">{{ uploadMessage() }}</div>
+        </div>
+      }
+
+      @if (validationErrors().length > 0) {
+        <div class="validation-errors" style="margin-top: 1rem">
+          <h3 class="error-title">Validation Errors ({{ validationErrors().length }} rows)</h3>
+          <div class="error-table-container">
+            <table class="error-table">
+              <thead>
+                <tr>
+                  <th>Row</th>
+                  <th>Error Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (error of validationErrors().slice(0, 20); track error.rowNumber) {
+                  <tr class="error-row">
+                    <td>Row {{ error.rowNumber }}</td>
+                    <td>{{ error.reason }}</td>
+                  </tr>
+                }
+                @if (validationErrors().length > 20) {
+                  <tr>
+                    <td colspan="2" style="text-align: center; font-style: italic">
+                      ... and {{ validationErrors().length - 20 }} more errors
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Lead List Section -->
+  <section class="leads-section">
+    <div class="section-card">
+      <h2 class="section-title">{{ isAdmin() ? 'Lead List' : 'View Leads' }}</h2>
+
+      <div class="filters-section">
+        <div class="search-group">
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Search by name, email, or phone..."
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+          />
+          @if (searchQuery()) {
+            <button class="btn-clear" type="button" (click)="clearSearch()">✕</button>
+          }
+        </div>
+
+        <div class="filter-group">
+          <select
+            class="filter-select"
+            [ngModel]="selectedProductFilter()"
+            (ngModelChange)="selectedProductFilter.set($event)"
+          >
+            <option value="">All Products</option>
+            @for (product of products(); track product.product_id) {
+              <option [value]="product.product_id">
+                {{ product.product_name }}
+              </option>
+            }
+          </select>
+
+          <select
+            class="filter-select"
+            [ngModel]="selectedSourceFilter()"
+            (ngModelChange)="selectedSourceFilter.set($event)"
+          >
+            <option value="">All Sources</option>
+            @for (source of sources(); track source.source_id) {
+              <option [value]="source.source_id">
+                {{ source.source_name }}
+              </option>
+            }
+          </select>
+
+          @if (selectedProductFilter() || selectedSourceFilter() || searchQuery()) {
+            <button class="btn btn-secondary" type="button" (click)="clearFilters()">
+              Clear Filters
+            </button>
+          }
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table class="leads-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Product</th>
+              <th>Source</th>
+              <th>Date Added</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (lead of filteredLeads(); track lead.lead_id || lead.email) {
+              <tr>
+                <td>{{ lead.name || '-' }}</td>
+                <td>{{ lead.email || '-' }}</td>
+                <td>{{ lead.phone || '-' }}</td>
+                <td>{{ lead.product_name || '-' }}</td>
+                <td>{{ lead.source_name || '-' }}</td>
+                <td>{{ lead.created_at || '-' }}</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="empty-state">
+                  No leads found. Upload a file to get started.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Controls -->
+      <div class="pagination-section">
+        <div class="pagination-info">
+          <span
+            >Showing {{ (currentPage() - 1) * pageSize() + 1 }}-{{
+              Math.min(currentPage() * pageSize(), totalLeads())
+            }}
+            of {{ totalLeads() }} leads</span
+          >
+          <div class="page-size-selector">
+            <label>Rows per page:</label>
+            <select
+              [value]="pageSize()"
+              (change)="changePageSize(+$any($event.target).value)"
+              class="page-size-select"
+            >
+              <option [value]="5">5</option>
+              <option [value]="10">10</option>
+              <option [value]="25">25</option>
+              <option [value]="50">50</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="pagination-controls">
+          <button
+            class="btn btn-secondary"
+            [disabled]="currentPage() === 1"
+            (click)="previousPage()"
+            type="button"
+          >
+            ← Previous
+          </button>
+
+          <div class="page-numbers">
+            @for (page of [].constructor(totalPages()); track page; let i = $index) {
+              <button
+                class="page-btn"
+                [class.active]="currentPage() === i + 1"
+                (click)="goToPage(i + 1)"
+                type="button"
+              >
+                {{ i + 1 }}
+              </button>
+            }
+          </div>
+
+          <button
+            class="btn btn-secondary"
+            [disabled]="currentPage() === totalPages()"
+            (click)="nextPage()"
+            type="button"
+          >
+            Next →
           </button>
         </div>
       </div>
-    </section>
-  
-    <!-- Lead List Section -->
-    <section class="leads-section">
-      <div class="section-card">
-        <h2 class="section-title">Lead List</h2>
-  
-        <div class="filters-section">
-          <div class="search-group">
-            <input
-              type="text"
-              class="search-input"
-              placeholder="Search by name, email, or phone..."
-              [ngModel]="searchQuery()"
-              (ngModelChange)="searchQuery.set($event)"
-            />
-            @if (searchQuery()) {
-              <button
-                class="btn-clear"
-                type="button"
-                (click)="clearSearch()"
-              >
-                ✕
-              </button>
-            }
-          </div>
-  
-          <div class="filter-group">
-            <select
-              class="filter-select"
-              [ngModel]="selectedProductFilter()"
-              (ngModelChange)="selectedProductFilter.set($event)"
-            >
-              <option value="">All Products</option>
-              @for (product of products(); track product.product_id) {
-                <option [value]="product.product_id">
-                  {{ product.product_name }}
-                </option>
-              }
-            </select>
-  
-            <select
-              class="filter-select"
-              [ngModel]="selectedSourceFilter()"
-              (ngModelChange)="selectedSourceFilter.set($event)"
-            >
-              <option value="">All Sources</option>
-              @for (source of sources(); track source.source_id) {
-                <option [value]="source.source_id">
-                  {{ source.source_name }}
-                </option>
-              }
-            </select>
-  
-            @if (
-              selectedProductFilter() ||
-              selectedSourceFilter() ||
-              searchQuery()
-            ) {
-              <button
-                class="btn btn-secondary"
-                type="button"
-                (click)="clearFilters()"
-              >
-                Clear Filters
-              </button>
-            }
-          </div>
-        </div>
-  
-        <div class="table-container">
-          <table class="leads-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Product</th>
-                <th>Source</th>
-                <th>Status</th>
-                <th>Date Added</th>
-              </tr>
-            </thead>
-  
-            <tbody>
-              @for (lead of filteredLeads(); track lead.lead_id) {
-                <tr>
-                  <td>{{ lead.name || '-' }}</td>
-                  <td>{{ lead.email || '-' }}</td>
-                  <td>{{ lead.phone || '-' }}</td>
-                  <td>{{ lead.product_name || '-' }}</td>
-                  <td>{{ lead.source_name || '-' }}</td>
-                  <td>{{ lead.status }}</td>
-                  <td>{{ lead.created_at }}</td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="7" class="empty-state">
-                    No leads found. Upload a file to get started.
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-  
-        <div class="results-count">
-          Showing {{ filteredLeads().length }} of {{ allLeads().length }} leads
-        </div>
-      </div>
-    </section>
-  </div>
-  
+    </div>
+  </section>
+</div>

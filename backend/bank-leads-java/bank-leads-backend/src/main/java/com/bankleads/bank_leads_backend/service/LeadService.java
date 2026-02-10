@@ -23,6 +23,7 @@ public class LeadService {
     private static final Logger log = LoggerFactory.getLogger(LeadService.class);
     
     private final LeadRepository leadRepository;
+    private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
     
     public Optional<Lead> findByLeadId(String leadId) {
         return leadRepository.findByLeadId(leadId);
@@ -99,30 +100,37 @@ public class LeadService {
     }
     
     private Optional<Lead> findExistingLead(Map<String, String> normalized) {
+        // Get deduplication config from canonical fields (dynamic)
+        DeduplicationService.DeduplicationConfig config = 
+            canonicalFieldDeduplicationService.buildConfigFromCanonicalFields();
+        
         String email = normalized.get("email");
         String phone = normalized.get("phone_number");
         String aadhar = normalized.get("aadhar_number");
         
-        // Try email first
-        if (email != null && !email.isEmpty()) {
+        // Try email if enabled in config
+        if (config.isUseEmail() && email != null && !email.isEmpty()) {
             List<Lead> leads = leadRepository.findByEmail(email);
             if (!leads.isEmpty()) {
+                log.debug("Found existing lead by email: {}", email);
                 return Optional.of(leads.get(0));
             }
         }
         
-        // Try phone
-        if (phone != null && !phone.isEmpty()) {
+        // Try phone if enabled in config
+        if (config.isUsePhone() && phone != null && !phone.isEmpty()) {
             List<Lead> leads = leadRepository.findByPhoneNumber(phone);
             if (!leads.isEmpty()) {
+                log.debug("Found existing lead by phone: {}", phone);
                 return Optional.of(leads.get(0));
             }
         }
         
-        // Try aadhar
-        if (aadhar != null && !aadhar.isEmpty()) {
+        // Try aadhar if enabled in config
+        if (config.isUseAadhar() && aadhar != null && !aadhar.isEmpty()) {
             List<Lead> leads = leadRepository.findByAadharNumber(aadhar);
             if (!leads.isEmpty()) {
+                log.debug("Found existing lead by aadhar: {}", aadhar);
                 return Optional.of(leads.get(0));
             }
         }

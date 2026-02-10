@@ -12,6 +12,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -56,6 +57,8 @@ public class CanonicalFieldController {
                 .orElse(ResponseUtil.error("Canonical field '" + id + "' not found", HttpStatus.NOT_FOUND));
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<CanonicalField>> createCanonicalField(@RequestBody Map<String, Object> request) {
         String fieldName = ((String) request.get("field_name")).toLowerCase();
@@ -92,6 +95,8 @@ public class CanonicalFieldController {
         return ResponseUtil.success(saved, "Field created", HttpStatus.CREATED);
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<CanonicalField>> updateCanonicalField(
             @PathVariable String id,
@@ -99,6 +104,8 @@ public class CanonicalFieldController {
         return ResponseUtil.error("Canonical fields are immutable after creation", HttpStatus.METHOD_NOT_ALLOWED);
     }
     
+    
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Object>> deleteCanonicalField(@PathVariable String id) {
         return ResponseUtil.error("Canonical fields are immutable after creation", HttpStatus.METHOD_NOT_ALLOWED);

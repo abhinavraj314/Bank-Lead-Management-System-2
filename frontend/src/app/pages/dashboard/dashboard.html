@@ -1,6 +1,8 @@
 <div class="dashboard-page">
   <div class="page-header">
-    <h1 class="page-title">Lead Management – Admin</h1>
+    <h1 class="page-title">
+      {{ isAdmin() ? 'Lead Management – Admin' : 'Lead Management – User' }}
+    </h1>
   </div>
 
   <div class="action-cards">
