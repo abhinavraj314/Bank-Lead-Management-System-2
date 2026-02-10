@@ -1,12 +1,11 @@
 package com.bankleads.bank_leads_backend.service;
 
 import com.bankleads.bank_leads_backend.model.Lead;
+import com.bankleads.bank_leads_backend.model.Product;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
+import com.bankleads.bank_leads_backend.repository.ProductRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +16,13 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class DeduplicationService {
+
+    private static final Set<String> EMAIL_NAMES = Set.of("email");
+    private static final Set<String> PHONE_NAMES = Set.of("phone_number", "phone");
+    private static final Set<String> AADHAR_NAMES = Set.of("aadhar_number", "aadhar");
     
     private final LeadRepository leadRepository;
-    private final MongoTemplate mongoTemplate;
+    private final ProductRepository productRepository;
     
     private DeduplicationConfig config = new DeduplicationConfig(true, true, true);
     
@@ -40,17 +43,71 @@ public class DeduplicationService {
         return getDeduplicationConfig();
     }
     
+    /**
+     * Builds deduplication config from canonical field names (e.g. from Product.deduplicationFields).
+     * Allowed names: "email", "phone_number", "aadhar_number" (or "phone", "aadhar").
+     * If null or empty, returns config with all three enabled.
+     */
+    public DeduplicationConfig buildConfigFromCanonicalFieldNames(List<String> canonicalFieldNames) {
+        if (canonicalFieldNames == null || canonicalFieldNames.isEmpty()) {
+            return new DeduplicationConfig(true, true, true);
+        }
+        Set<String> normalized = canonicalFieldNames.stream()
+                .map(s -> s == null ? "" : s.trim().toLowerCase())
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+        boolean useEmail = normalized.stream().anyMatch(EMAIL_NAMES::contains);
+        boolean usePhone = normalized.stream().anyMatch(PHONE_NAMES::contains);
+        boolean useAadhar = normalized.stream().anyMatch(AADHAR_NAMES::contains);
+        return new DeduplicationConfig(useEmail, usePhone, useAadhar);
+    }
+    
     @Transactional
     public DeduplicationStats executeDeduplication(DeduplicationConfig overrideConfig) {
         DeduplicationConfig activeConfig = overrideConfig != null ? overrideConfig : config;
-        
-        long totalLeads = leadRepository.count();
-        
-        List<List<Lead>> duplicateGroups = findDuplicateGroups(activeConfig);
-        
+        List<Lead> allLeads = leadRepository.findAll();
+        return executeDeduplicationWithLeads(activeConfig, allLeads);
+    }
+    
+    /**
+     * Runs lead deduplication only for leads belonging to the given product (pId),
+     * using that product's configured canonical deduplication fields.
+     */
+    @Transactional
+    public DeduplicationStats executeDeduplicationForProduct(String pId) {
+        String pIdUpper = pId == null ? null : pId.toUpperCase();
+        Product product = productRepository.findByPId(pIdUpper)
+                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + pId));
+        DeduplicationConfig productConfig = buildConfigFromCanonicalFieldNames(product.getDeduplicationFields());
+        List<Lead> productLeads = leadRepository.findByPId(pIdUpper);
+        return executeDeduplicationWithLeads(productConfig, productLeads);
+    }
+    
+    /**
+     * Runs deduplication across all products: for each product, runs lead deduplication
+     * for that product's leads using that product's deduplication fields.
+     */
+    @Transactional
+    public Map<String, DeduplicationStats> executeDeduplicationForAllProducts() {
+        Map<String, DeduplicationStats> byProduct = new LinkedHashMap<>();
+        for (Product product : productRepository.findAll()) {
+            String pId = product.getPId();
+            try {
+                DeduplicationStats stats = executeDeduplicationForProduct(pId);
+                byProduct.put(pId, stats);
+            } catch (Exception e) {
+                // log and skip; or rethrow
+                byProduct.put(pId, null); // or a stats with error message
+            }
+        }
+        return byProduct;
+    }
+    
+    private DeduplicationStats executeDeduplicationWithLeads(DeduplicationConfig activeConfig, List<Lead> candidateLeads) {
+        long totalLeads = candidateLeads.size();
+        List<List<Lead>> duplicateGroups = findDuplicateGroups(activeConfig, candidateLeads);
         List<MergeDetail> mergeDetails = new ArrayList<>();
         int mergedCount = 0;
-        
         for (List<Lead> group : duplicateGroups) {
             MergeResult result = mergeLeads(group);
             mergeDetails.add(new MergeDetail(
@@ -62,9 +119,7 @@ public class DeduplicationService {
             ));
             mergedCount += result.getMergedLeadIds().size();
         }
-        
         long finalCount = leadRepository.count();
-        
         return new DeduplicationStats(
                 totalLeads,
                 duplicateGroups.stream().mapToInt(g -> g.size() - 1).sum(),
@@ -74,52 +129,51 @@ public class DeduplicationService {
         );
     }
     
-    private List<List<Lead>> findDuplicateGroups(DeduplicationConfig config) {
+    private List<List<Lead>> findDuplicateGroups(DeduplicationConfig config, List<Lead> candidateLeads) {
         List<List<Lead>> duplicateGroups = new ArrayList<>();
         Set<String> processed = new HashSet<>();
         
-        List<Lead> allLeads = leadRepository.findAll();
-        
-        for (Lead lead : allLeads) {
+        for (Lead lead : candidateLeads) {
             if (processed.contains(lead.getLeadId())) {
                 continue;
             }
             
-            Query query = new Query();
-            List<Criteria> criteriaList = new ArrayList<>();
-            
-            if (config.isUseEmail() && lead.getEmail() != null) {
-                criteriaList.add(Criteria.where("email").is(lead.getEmail()));
-            }
-            if (config.isUsePhone() && lead.getPhoneNumber() != null) {
-                criteriaList.add(Criteria.where("phoneNumber").is(lead.getPhoneNumber()));
-            }
-            if (config.isUseAadhar() && lead.getAadharNumber() != null) {
-                criteriaList.add(Criteria.where("aadharNumber").is(lead.getAadharNumber()));
-            }
-            
-            if (criteriaList.isEmpty()) {
+            boolean hasEmail = config.isUseEmail() && lead.getEmail() != null && !lead.getEmail().isEmpty();
+            boolean hasPhone = config.isUsePhone() && lead.getPhoneNumber() != null && !lead.getPhoneNumber().isEmpty();
+            boolean hasAadhar = config.isUseAadhar() && lead.getAadharNumber() != null && !lead.getAadharNumber().isEmpty();
+            if (!hasEmail && !hasPhone && !hasAadhar) {
                 continue;
             }
             
-            query.addCriteria(new Criteria().orOperator(criteriaList.toArray(new Criteria[0])))
-                    .addCriteria(Criteria.where("leadId").ne(lead.getLeadId()));
-            
-            List<Lead> duplicates = mongoTemplate.find(query, Lead.class);
+            List<Lead> duplicates = candidateLeads.stream()
+                    .filter(other -> !other.getLeadId().equals(lead.getLeadId()))
+                    .filter(other -> matchesForDeduplication(lead, other, config))
+                    .collect(Collectors.toList());
             
             if (!duplicates.isEmpty()) {
                 List<Lead> group = new ArrayList<>();
                 group.add(lead);
                 group.addAll(duplicates);
-                
-                group.sort(Comparator.comparing(Lead::getCreatedAt));
+                group.sort(Comparator.comparing(Lead::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
                 duplicateGroups.add(group);
-                
                 group.forEach(l -> processed.add(l.getLeadId()));
             }
         }
         
         return duplicateGroups;
+    }
+    
+    private boolean matchesForDeduplication(Lead lead, Lead other, DeduplicationConfig config) {
+        if (config.isUseEmail() && lead.getEmail() != null && lead.getEmail().equals(other.getEmail())) {
+            return true;
+        }
+        if (config.isUsePhone() && lead.getPhoneNumber() != null && lead.getPhoneNumber().equals(other.getPhoneNumber())) {
+            return true;
+        }
+        if (config.isUseAadhar() && lead.getAadharNumber() != null && lead.getAadharNumber().equals(other.getAadharNumber())) {
+            return true;
+        }
+        return false;
     }
     
     private MergeResult mergeLeads(List<Lead> group) {

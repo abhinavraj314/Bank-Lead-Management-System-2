@@ -11,6 +11,8 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.index.Indexed;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Document(collection = "products")
 @Data
@@ -31,6 +33,16 @@ public class Product {
     @Field("p_name")
     @JsonProperty("pName")
     private String pName;
+    
+    /**
+     * Canonical field names used for lead deduplication for this product.
+     * Allowed values: "email", "phone_number", "aadhar_number".
+     * When null or empty, defaults to all three.
+     */
+    @Field("deduplication_fields")
+    @JsonProperty("deduplicationFields")
+    @Builder.Default
+    private List<String> deduplicationFields = new ArrayList<>();
     
     @Field("created_at")
     @JsonProperty("createdAt")
