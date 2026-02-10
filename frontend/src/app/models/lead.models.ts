@@ -22,6 +22,7 @@ export interface Source {
   source_name: string;
   product_id: string;
   status?: 'active' | 'inactive';
+  columns?: string[];
 }
 
 export interface CanonicalField {
@@ -127,6 +128,13 @@ export interface UploadResponse {
     reason: string;
     rawInput?: any;
   }>;
+  deduplication?: {
+    totalLeadsBefore: number; // Total leads before deduplication
+    duplicatesFound: number; // Number of duplicate leads found
+    mergedCount: number; // Number of leads that were merged
+    finalLeadCount: number; // Final lead count after deduplication
+    error?: string;
+  };
 }
 
 // Legacy interfaces (kept for backward compatibility if needed)

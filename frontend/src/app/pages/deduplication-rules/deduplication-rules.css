@@ -1,6 +1,7 @@
 .deduplication-rules-page {
-  max-width: 800px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem 2.5rem;
 }
 
 .page-header {
@@ -8,30 +9,147 @@
 }
 
 .page-title {
-  font-size: 2.25rem;
-  font-weight: 800;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: #0f172a;
   margin: 0;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
+}
+
+/* Info Banner */
+.info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.info-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.info-text {
+  font-size: 0.95rem;
+  color: #1e40af;
+  margin: 0;
+  line-height: 1.6;
 }
 
 .content-card {
   background: white;
   border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.06);
   padding: 2.5rem;
   border: 1px solid #e2e8f0;
 }
 
-.description {
-  font-size: 1rem;
+/* Sections */
+.section {
+  margin-bottom: 2.5rem;
+  padding-bottom: 2.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.section:last-of-type {
+  border-bottom: none;
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 1rem 0;
+}
+
+.section-description {
+  font-size: 0.95rem;
   color: #6b7280;
-  margin: 0 0 2rem 0;
+  margin: 0 0 1.5rem 0;
   line-height: 1.6;
 }
 
+/* Form Group */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.required {
+  color: #ef4444;
+}
+
+.product-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.product-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.product-select:hover {
+  border-color: #9ca3af;
+}
+
+.product-selected {
+  font-size: 0.95rem;
+  color: #059669;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.empty-fields-message {
+  font-size: 0.95rem;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1.5rem;
+  border-radius: 8px;
+  text-align: center;
+  margin: 0;
+}
+
 .fields-list {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.fields-list.read-only .field-item {
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  background: #f9fafb;
+  transition: none;
+}
+
+.fields-list.read-only .field-item:hover {
+  border-color: #e5e7eb;
+  background: #f9fafb;
 }
 
 .field-item {
@@ -54,11 +172,12 @@
   gap: 0.75rem;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: 20px;
   height: 20px;
   cursor: pointer;
   accent-color: #3b82f6;
+  flex-shrink: 0;
 }
 
 .field-info {
@@ -73,15 +192,53 @@
   color: #1f2937;
 }
 
+.fields-info {
+  font-size: 0.95rem;
+  color: #6b7280;
+  margin: 1rem 0 0 0;
+  line-height: 1.6;
+}
 .field-meta {
   font-size: 0.875rem;
   color: #6b7280;
+}
+
+.fields-selected {
+  font-size: 0.95rem;
+  color: #059669;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
+/* Error Message */
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  color: #991b1b;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.error-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
   padding-top: 1.5rem;
+  margin-top: 1.5rem;
   border-top: 1px solid #e5e7eb;
 }
 
@@ -121,4 +278,29 @@
   opacity: 0.6;
   cursor: not-allowed;
   transform: none !important;
+}
+/* Success Message */
+.success-message {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 1rem;
+  color: #065f46;
+  font-size: 0.95rem;
+  margin-top: 1rem;
+}
+
+.success-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+/* Info Banner for Auto-Deduplication */
+.info-banner-auto {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  margin-top: 2rem;
 }

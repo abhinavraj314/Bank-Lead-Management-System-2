@@ -1,7 +1,7 @@
 .dashboard-page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem 2.5rem;
 }
 
 .page-header {
@@ -9,7 +9,7 @@
 }
 
 .page-title {
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: #0f172a;
   margin: 0;
@@ -38,7 +38,7 @@
 
 .action-card:hover {
   border-color: #2563eb;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   transform: translateY(-2px);
 }
 
