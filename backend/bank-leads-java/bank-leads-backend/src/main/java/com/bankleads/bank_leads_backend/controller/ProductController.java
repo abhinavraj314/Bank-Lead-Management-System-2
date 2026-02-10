@@ -70,6 +70,7 @@ public class ProductController {
         Product product = Product.builder()
                 .pId(request.getPId().toUpperCase())
                 .pName(request.getPName())
+                .deduplicationFields(request.getDeduplicationFields() != null ? request.getDeduplicationFields() : new java.util.ArrayList<>())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -118,11 +119,19 @@ public class ProductController {
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<Product>> updateProduct(
             @PathVariable String id,
-            @RequestBody Map<String, String> updates) {
+            @RequestBody Map<String, Object> updates) {
         return productRepository.findByPId(id.toUpperCase())
                 .map(product -> {
-                    if (updates.containsKey("p_name")) {
-                        product.setPName(updates.get("p_name"));
+                    if (updates.containsKey("p_name") && updates.get("p_name") != null) {
+                        product.setPName((String) updates.get("p_name"));
+                    }
+                    if (updates.containsKey("deduplication_fields")) {
+                        Object raw = updates.get("deduplication_fields");
+                        if (raw instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<String> list = (List<String>) raw;
+                            product.setDeduplicationFields(list);
+                        }
                     }
                     product.setUpdatedAt(LocalDateTime.now());
                     Product saved = productRepository.save(product);

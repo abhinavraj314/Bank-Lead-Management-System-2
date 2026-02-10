@@ -19,6 +19,7 @@ public interface LeadRepository extends MongoRepository<Lead, String> {
     List<Lead> findByAadharNumber(String aadharNumber);
     
     Page<Lead> findByPId(String pId, Pageable pageable);
+    List<Lead> findByPId(String pId);
     Page<Lead> findBySourceId(String sourceId, Pageable pageable);
     long countBySourceId(String sourceId);
 }
