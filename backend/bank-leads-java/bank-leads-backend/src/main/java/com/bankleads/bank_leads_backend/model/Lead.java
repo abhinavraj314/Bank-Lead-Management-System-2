@@ -68,8 +68,8 @@ public class Lead {
     @Builder.Default
     private List<String> productsSeen = new ArrayList<>();
     
-    // AI scoring stub fields
-    private Integer leadScore;
+    // AI scoring fields (probability 0-1 for ranking)
+    private Double leadScore;
     private String scoreReason;
 
     // Optional fields for ML/mock financial modeling

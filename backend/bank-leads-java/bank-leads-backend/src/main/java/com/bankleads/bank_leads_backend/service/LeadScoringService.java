@@ -28,7 +28,7 @@ public class LeadScoringService {
     }
     
     public ScoringResult calculateLeadScore(Lead lead) {
-        int score = 0;
+        double score = 0.0;
         Map<String, ScoringFactor> breakdown = new HashMap<>();
         
         breakdown.put("hasEmail", new ScoringFactor(30, false));
@@ -74,8 +74,8 @@ public class LeadScoringService {
             breakdown.get("multipleProducts").setApplied(true);
         }
         
-        // Cap at 100
-        score = Math.min(score, 100);
+        // Convert to probability in [0, 1] for ranking.
+        double probability = Math.min(score, 100.0) / 100.0;
         
         // Generate reason
         StringBuilder reasonBuilder = new StringBuilder();
@@ -94,24 +94,24 @@ public class LeadScoringService {
         }
         
         String reason = reasonBuilder.length() > 0
-                ? "Score based on: " + reasonBuilder.toString()
+                ? "Probability based on: " + reasonBuilder.toString()
                 : "No scoring factors applied";
         
-        return new ScoringResult(score, reason, breakdown);
+        return new ScoringResult(probability, reason, breakdown);
     }
     
     public static class ScoringResult {
-        private final int score;
+        private final double score;
         private final String reason;
         private final Map<String, ScoringFactor> breakdown;
         
-        public ScoringResult(int score, String reason, Map<String, ScoringFactor> breakdown) {
+        public ScoringResult(double score, String reason, Map<String, ScoringFactor> breakdown) {
             this.score = score;
             this.reason = reason;
             this.breakdown = breakdown;
         }
         
-        public int getScore() { return score; }
+        public double getScore() { return score; }
         public String getReason() { return reason; }
         public Map<String, ScoringFactor> getBreakdown() { return breakdown; }
     }
