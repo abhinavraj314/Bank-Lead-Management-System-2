@@ -103,9 +103,9 @@ export class Leads {
   }
 
   loadLeads() {
-    this.leadService.getLeads().subscribe((d) => {
-      this.allLeads.set(d);
-      this.totalLeads.set(d.length);
+    this.leadService.getLeads({ limit: 10000 }).subscribe((result) => {
+      this.allLeads.set(result.leads);
+      this.totalLeads.set(result.total);
       this.currentPage.set(1);
     });
   }

@@ -24,6 +24,7 @@ export class DeduplicationRulesPage implements OnInit {
   protected readonly selectedProduct = signal<string>('');
   protected readonly selectedFields = signal<string[]>([]);
   protected readonly isSaving = signal<boolean>(false);
+  protected readonly isExecuting = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
   protected readonly successMessage = signal<string>('');
 
@@ -50,41 +51,39 @@ export class DeduplicationRulesPage implements OnInit {
 
   /**
    * Called when user changes product selection
-   * Resets selected fields and loads rules for the new product
+   * Loads rules from backend for the selected product (canonical field names: email, phone_number, aadhar_number)
    */
   onProductChanged(productId: string): void {
     this.selectedProduct.set(productId);
     this.errorMessage.set('');
 
     if (!productId) {
-      // Product cleared
       this.selectedFields.set([]);
       return;
     }
 
-    // Load existing rules for this product
     this.deduplicationRulesService.getRulesForProduct(productId).subscribe((rules) => {
       this.selectedFields.set(rules);
     });
   }
 
   /**
-   * Toggle a canonical field for deduplication
+   * Toggle a canonical field for deduplication (uses field_name, not field_id)
    */
-  toggleField(fieldId: string | undefined): void {
-    if (!fieldId) return;
+  toggleField(fieldName: string | undefined): void {
+    if (!fieldName) return;
 
     const current = this.selectedFields();
-    if (current.includes(fieldId)) {
-      this.selectedFields.set(current.filter((id) => id !== fieldId));
+    if (current.includes(fieldName)) {
+      this.selectedFields.set(current.filter((n) => n !== fieldName));
     } else {
-      this.selectedFields.set([...current, fieldId]);
+      this.selectedFields.set([...current, fieldName]);
     }
   }
 
-  isFieldSelected(fieldId: string | undefined): boolean {
-    if (!fieldId) return false;
-    return this.selectedFields().includes(fieldId);
+  isFieldSelected(fieldName: string | undefined): boolean {
+    if (!fieldName) return false;
+    return this.selectedFields().includes(fieldName);
   }
 
   /**
@@ -118,6 +117,7 @@ export class DeduplicationRulesPage implements OnInit {
               this.selectedProduct(),
             )}`,
           );
+          this.loadProducts(); // Refresh so "Saved Rules for All Products" table updates
           setTimeout(() => this.successMessage.set(''), 4000);
         },
         error: (error) => {
@@ -130,5 +130,52 @@ export class DeduplicationRulesPage implements OnInit {
   getProductName(productId: string): string {
     const product = this.products().find((p) => p.product_id === productId);
     return product?.product_name || productId;
+  }
+
+  /** Run deduplication for the selected product using its config */
+  onExecuteForProduct(): void {
+    const pId = this.selectedProduct();
+    if (!pId) {
+      this.errorMessage.set('Please select a product first');
+      return;
+    }
+    this.errorMessage.set('');
+    this.isExecuting.set(true);
+    this.deduplicationRulesService.executeDeduplicationForProduct(pId).subscribe({
+      next: (stats) => {
+        this.isExecuting.set(false);
+        this.successMessage.set(
+          `Deduplication completed for ${this.getProductName(pId)}: ${stats.mergedCount} lead(s) merged`
+        );
+        setTimeout(() => this.successMessage.set(''), 5000);
+      },
+      error: (err) => {
+        this.isExecuting.set(false);
+        this.errorMessage.set(err?.message || 'Deduplication failed');
+      },
+    });
+  }
+
+  /** Run deduplication for all products (each uses its own config) */
+  onExecuteForAllProducts(): void {
+    this.errorMessage.set('');
+    this.isExecuting.set(true);
+    this.deduplicationRulesService.executeDeduplicationForAllProducts().subscribe({
+      next: (results) => {
+        this.isExecuting.set(false);
+        const totalMerged = Object.values(results).reduce(
+          (sum, s) => sum + (s?.mergedCount ?? 0),
+          0
+        );
+        this.successMessage.set(
+          `Deduplication completed for all products: ${totalMerged} lead(s) merged across ${Object.keys(results).length} product(s)`
+        );
+        setTimeout(() => this.successMessage.set(''), 5000);
+      },
+      error: (err) => {
+        this.isExecuting.set(false);
+        this.errorMessage.set(err?.message || 'Deduplication failed');
+      },
+    });
   }
 }

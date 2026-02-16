@@ -15,6 +15,7 @@ export interface Lead {
 export interface Product {
   product_id: string;
   product_name: string;
+  deduplication_fields?: string[]; // Canonical field names: e.g. ["email", "phone_number", "aadhar_number"]
 }
 
 export interface Source {
@@ -61,6 +62,7 @@ export interface BackendProduct {
   id?: string; // MongoDB _id
   pId: string; // Product ID (camelCase)
   pName: string; // Product Name (camelCase)
+  deduplicationFields?: string[]; // Canonical field names for lead deduplication
   createdAt?: string | Date;
   updatedAt?: string | Date;
 }
@@ -135,6 +137,23 @@ export interface UploadResponse {
     finalLeadCount: number; // Final lead count after deduplication
     error?: string;
   };
+}
+
+// Product deduplication config (per-product canonical fields)
+export interface ProductDeduplicationConfig {
+  pId: string;
+  pName: string;
+  deduplicationFields: string[];
+  resolvedConfig: { useEmail: boolean; usePhone: boolean; useAadhar: boolean };
+}
+
+// Deduplication execute response
+export interface DeduplicationStats {
+  totalLeads: number;
+  duplicatesFound: number;
+  mergedCount: number;
+  finalCount: number;
+  mergeDetails?: Array<{ keptLeadId: string; mergedLeadIds: string[] }>;
 }
 
 // Legacy interfaces (kept for backward compatibility if needed)

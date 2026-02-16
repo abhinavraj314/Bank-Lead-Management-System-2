@@ -31,6 +31,7 @@ export class ProductService {
         return products.map((backendProduct: BackendProduct) => ({
           product_id: backendProduct.pId,
           product_name: backendProduct.pName,
+          deduplication_fields: backendProduct.deduplicationFields || [],
         }));
       }),
       catchError((error) => {
@@ -63,6 +64,7 @@ export class ProductService {
         return {
           product_id: backendProduct.pId,
           product_name: backendProduct.pName,
+          deduplication_fields: backendProduct.deduplicationFields || [],
         };
       }),
       catchError((error) => {

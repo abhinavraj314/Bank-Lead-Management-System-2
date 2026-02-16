@@ -1,7 +1,9 @@
 package com.bankleads.bank_leads_backend.service;
 
 import com.bankleads.bank_leads_backend.model.Lead;
+import com.bankleads.bank_leads_backend.model.Product;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
+import com.bankleads.bank_leads_backend.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +26,8 @@ public class LeadService {
     
     private final LeadRepository leadRepository;
     private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
+    private final ProductRepository productRepository;
+    private final DeduplicationService deduplicationService;
     
     public Optional<Lead> findByLeadId(String leadId) {
         return leadRepository.findByLeadId(leadId);
@@ -31,8 +35,8 @@ public class LeadService {
     
     @Transactional
     public UpsertResult upsertLead(Map<String, String> normalized, UpsertContext ctx) {
-        // Check for existing lead
-        Optional<Lead> existingOpt = findExistingLead(normalized);
+        // Check for existing lead using per-product deduplication config when available
+        Optional<Lead> existingOpt = findExistingLead(normalized, ctx);
         
         if (existingOpt.isPresent()) {
             Lead existing = existingOpt.get();
@@ -61,6 +65,11 @@ public class LeadService {
                 .productsSeen(new ArrayList<>(Collections.singletonList(ctx.pId)))
                 .leadScore(null)
                 .scoreReason(null)
+                .income(ctx.income)
+                .creditScore(ctx.creditScore)
+                .employmentType(ctx.employmentType)
+                .loanAmount(ctx.loanAmount)
+                .converted(ctx.converted)
                 .build();
 
         // Defensive fix: guarantee leadId is never null/blank before insert.
@@ -99,10 +108,30 @@ public class LeadService {
         }
     }
     
-    private Optional<Lead> findExistingLead(Map<String, String> normalized) {
-        // Get deduplication config from canonical fields (dynamic)
-        DeduplicationService.DeduplicationConfig config = 
-            canonicalFieldDeduplicationService.buildConfigFromCanonicalFields();
+    private Optional<Lead> findExistingLead(Map<String, String> normalized, UpsertContext ctx) {
+        // Prefer per-product deduplication config (from Product.deduplicationFields).
+        // Fallback to canonical-fields-based global config if product is missing or misconfigured.
+        DeduplicationService.DeduplicationConfig config;
+        
+        String ctxPId = ctx != null ? ctx.getPId() : null;
+        if (ctxPId != null && !ctxPId.isBlank()) {
+            String pIdUpper = ctxPId.toUpperCase();
+            Optional<Product> productOpt = productRepository.findByPId(pIdUpper);
+            if (productOpt.isPresent()) {
+                Product product = productOpt.get();
+                config = deduplicationService.buildConfigFromCanonicalFieldNames(
+                        product.getDeduplicationFields()
+                );
+                log.debug("Using per-product dedup config for pId {}: useEmail={}, usePhone={}, useAadhar={}",
+                        pIdUpper, config.isUseEmail(), config.isUsePhone(), config.isUseAadhar());
+            } else {
+                config = canonicalFieldDeduplicationService.buildConfigFromCanonicalFields();
+                log.warn("Product not found for pId {} while deduplicating; falling back to canonical-field config", pIdUpper);
+            }
+        } else {
+            config = canonicalFieldDeduplicationService.buildConfigFromCanonicalFields();
+            log.debug("No pId in UpsertContext; using canonical-field dedup config");
+        }
         
         String email = normalized.get("email");
         String phone = normalized.get("phone_number");
@@ -152,6 +181,21 @@ public class LeadService {
         if ((existing.getAadharNumber() == null || existing.getAadharNumber().isEmpty()) && incoming.get("aadhar_number") != null) {
             existing.setAadharNumber(incoming.get("aadhar_number"));
         }
+        if (existing.getIncome() == null && ctx.getIncome() != null) {
+            existing.setIncome(ctx.getIncome());
+        }
+        if (existing.getCreditScore() == null && ctx.getCreditScore() != null) {
+            existing.setCreditScore(ctx.getCreditScore());
+        }
+        if (existing.getEmploymentType() == null && ctx.getEmploymentType() != null) {
+            existing.setEmploymentType(ctx.getEmploymentType());
+        }
+        if (existing.getLoanAmount() == null && ctx.getLoanAmount() != null) {
+            existing.setLoanAmount(ctx.getLoanAmount());
+        }
+        if (existing.getConverted() == null && ctx.getConverted() != null) {
+            existing.setConverted(ctx.getConverted());
+        }
         
         // Track source and product history
         if (!existing.getSourcesSeen().contains(ctx.sourceId)) {
@@ -191,15 +235,36 @@ public class LeadService {
         private final String pId;
         private final String sourceId;
         private final Object rawRow;
+        private final Integer income;
+        private final Integer creditScore;
+        private final Lead.EmploymentType employmentType;
+        private final Integer loanAmount;
+        private final Boolean converted;
         
         public UpsertContext(String pId, String sourceId, Object rawRow) {
+            this(pId, sourceId, rawRow, null, null, null, null, null);
+        }
+
+        public UpsertContext(String pId, String sourceId, Object rawRow,
+                             Integer income, Integer creditScore, Lead.EmploymentType employmentType,
+                             Integer loanAmount, Boolean converted) {
             this.pId = pId;
             this.sourceId = sourceId;
             this.rawRow = rawRow;
+            this.income = income;
+            this.creditScore = creditScore;
+            this.employmentType = employmentType;
+            this.loanAmount = loanAmount;
+            this.converted = converted;
         }
         
         public String getPId() { return pId; }
         public String getSourceId() { return sourceId; }
         public Object getRawRow() { return rawRow; }
+        public Integer getIncome() { return income; }
+        public Integer getCreditScore() { return creditScore; }
+        public Lead.EmploymentType getEmploymentType() { return employmentType; }
+        public Integer getLoanAmount() { return loanAmount; }
+        public Boolean getConverted() { return converted; }
     }
 }

@@ -16,27 +16,25 @@ export class LeadService {
   ) {}
 
   /**
-   * Get all leads from Spring Boot backend
-   * Backend now returns enriched leads with productName and sourceName
-   * Handles ApiResponse<Page<LeadDTO>> wrapper
-   * Backend LeadDTO uses camelCase: leadId, phoneNumber, productName, sourceName
+   * Get leads from Spring Boot backend. Uses limit=10000 by default to fetch all leads.
    */
-  getLeads(): Observable<Lead[]> {
-    return this.apiService.get<ApiResponse<Page<any>>>('/leads').pipe(
+  getLeads(params?: { page?: number; limit?: number; p_id?: string; source_id?: string; q?: string }): Observable<{ leads: Lead[]; total: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 10000;
+    let url = `/leads?page=${page}&limit=${limit}`;
+    if (params?.p_id) url += `&p_id=${encodeURIComponent(params.p_id)}`;
+    if (params?.source_id) url += `&source_id=${encodeURIComponent(params.source_id)}`;
+    if (params?.q?.trim()) url += `&q=${encodeURIComponent(params.q.trim())}`;
+    return this.apiService.get<ApiResponse<Page<any>>>(url).pipe(
       map((response) => {
         // Extract data from ApiResponse wrapper
         if (!response.success || !response.data) {
-          console.warn('API returned unsuccessful response or no data:', response);
-          return [];
+          return { leads: [], total: 0 };
         }
-
-        // Extract leads from Page wrapper
-        const page = response.data;
-        const leads = page.content || [];
-
-        // Map backend camelCase response to frontend snake_case fields
-        // Backend LeadDTO returns: leadId, name, email, phoneNumber, aadharNumber, pId, productName, sourceId, sourceName, createdAt
-        return leads.map((lead: any) => ({
+        const pageData = response.data;
+        const content = pageData.content || [];
+        const total = pageData.totalElements ?? content.length;
+        const leads: Lead[] = content.map((lead: any) => ({
           lead_id: lead.leadId || '',
           name: lead.name || '',
           email: lead.email || '',
@@ -48,11 +46,11 @@ export class LeadService {
           status: 'new' as const,
           created_at: this.formatDate(lead.createdAt),
         }));
+        return { leads, total };
       }),
       catchError((error) => {
         console.error('Error fetching leads:', error);
-        // Return empty array on error to prevent UI breakage
-        return of([]);
+        return of({ leads: [], total: 0 });
       }),
     );
   }

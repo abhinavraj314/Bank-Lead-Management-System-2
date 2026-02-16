@@ -26,6 +26,11 @@ import java.util.UUID;
 @CompoundIndex(name = "lead_identifiers_index", def = "{'email': 1, 'phoneNumber': 1, 'aadharNumber': 1}")
 @CompoundIndex(name = "lead_dashboard_index", def = "{'pId': 1, 'sourceId': 1, 'createdAt': -1}")
 public class Lead {
+    public enum EmploymentType {
+        SALARIED,
+        SELF_EMPLOYED,
+        OTHER
+    }
     
     @Id
     private String id;
@@ -66,6 +71,13 @@ public class Lead {
     // AI scoring stub fields
     private Integer leadScore;
     private String scoreReason;
+
+    // Optional fields for ML/mock financial modeling
+    private Integer income;          // monthly income
+    private Integer creditScore;     // expected 550-850
+    private EmploymentType employmentType;
+    private Integer loanAmount;
+    private Boolean converted;
     
     @LastModifiedDate
     private LocalDateTime updatedAt;

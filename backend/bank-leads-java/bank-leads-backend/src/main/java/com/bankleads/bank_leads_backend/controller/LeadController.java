@@ -57,6 +57,7 @@ public class LeadController {
     private final LeadService leadService;
     private final LeadScoringService leadScoringService;
     private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
+    private final DeduplicationService deduplicationService;
     private final MongoTemplate mongoTemplate;
     
     
@@ -308,17 +309,29 @@ public class LeadController {
             log.info("Lead upload completed: totalRows={}, insertedCount={}, mergedCount={}, failedCount={} (p_id={}, source_id={})",
                     rows.size(), insertedCount, mergedCount, failedCount, pIdUpper, sourceIdUpper);
 
-            // Run automatic deduplication based on canonical fields as soon as leads are uploaded
+            // Run automatic deduplication per product using each product's configured dedup fields
             try {
-                DeduplicationService.DeduplicationStats dedupStats = canonicalFieldDeduplicationService.runDeduplicationFromCanonicalFields();
+                Map<String, DeduplicationService.DeduplicationStats> perProductStats =
+                        deduplicationService.executeDeduplicationForAllProducts();
+                long totalLeadsBefore = 0;
+                long duplicatesFound = 0;
+                int dedupMergedCount = 0;
+                for (DeduplicationService.DeduplicationStats s : perProductStats.values()) {
+                    if (s != null) {
+                        totalLeadsBefore += s.getTotalLeads();
+                        duplicatesFound += s.getDuplicatesFound();
+                        dedupMergedCount += s.getMergedCount();
+                    }
+                }
+                long finalLeadCount = leadRepository.count();
                 responseData.put("deduplication", Map.of(
-                        "totalLeadsBefore", dedupStats.getTotalLeads(),
-                        "duplicatesFound", dedupStats.getDuplicatesFound(),
-                        "mergedCount", dedupStats.getMergedCount(),
-                        "finalLeadCount", dedupStats.getFinalCount()
+                        "totalLeadsBefore", totalLeadsBefore,
+                        "duplicatesFound", duplicatesFound,
+                        "mergedCount", dedupMergedCount,
+                        "finalLeadCount", finalLeadCount
                 ));
-                log.info("Automatic deduplication after upload: mergedCount={}, finalLeadCount={}",
-                        dedupStats.getMergedCount(), dedupStats.getFinalCount());
+                log.info("Automatic per-product deduplication after upload: mergedCount={}, finalLeadCount={}",
+                        dedupMergedCount, finalLeadCount);
             } catch (Exception e) {
                 log.warn("Automatic deduplication after upload failed (upload succeeded): {}", e.getMessage());
                 responseData.put("deduplication", Map.of(
@@ -354,6 +367,61 @@ public class LeadController {
                 return "";
         }
     }
+
+    private Integer parseIntegerOrNull(Object value, String fieldName) {
+        if (value == null) return null;
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String str) {
+            String trimmed = str.trim();
+            if (trimmed.isEmpty()) return null;
+            try {
+                return Integer.valueOf(trimmed);
+            } catch (NumberFormatException ex) {
+                throw new RuntimeException("Invalid integer for '" + fieldName + "'");
+            }
+        }
+        throw new RuntimeException("Invalid value type for '" + fieldName + "'");
+    }
+
+    private Boolean parseBooleanOrNull(Object value, String fieldName) {
+        if (value == null) return null;
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof Number number) {
+            int asInt = number.intValue();
+            if (asInt == 0) return Boolean.FALSE;
+            if (asInt == 1) return Boolean.TRUE;
+            throw new RuntimeException("Invalid numeric value for '" + fieldName + "'. Use 0 or 1");
+        }
+        if (value instanceof String str) {
+            String trimmed = str.trim().toLowerCase();
+            if (trimmed.isEmpty()) return null;
+            if ("true".equals(trimmed) || "1".equals(trimmed)) return Boolean.TRUE;
+            if ("false".equals(trimmed) || "0".equals(trimmed)) return Boolean.FALSE;
+            throw new RuntimeException("Invalid boolean value for '" + fieldName + "'");
+        }
+        throw new RuntimeException("Invalid value type for '" + fieldName + "'");
+    }
+
+    private Lead.EmploymentType parseEmploymentTypeOrNull(Object value) {
+        if (value == null) return null;
+        if (value instanceof Lead.EmploymentType employmentType) {
+            return employmentType;
+        }
+        if (value instanceof String str) {
+            String trimmed = str.trim();
+            if (trimmed.isEmpty()) return null;
+            try {
+                return Lead.EmploymentType.valueOf(trimmed.toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                throw new RuntimeException("Invalid employmentType. Allowed values: SALARIED, SELF_EMPLOYED, OTHER");
+            }
+        }
+        throw new RuntimeException("Invalid value type for 'employmentType'");
+    }
     
     @GetMapping
     public ResponseEntity<ApiResponse<Page<LeadDTO>>> getLeads(
@@ -367,7 +435,7 @@ public class LeadController {
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "desc") String order) {
         
-        Pageable pageable = PageRequest.of(page - 1, Math.min(100, Math.max(1, limit)),
+        Pageable pageable = PageRequest.of(page - 1, Math.min(10000, Math.max(1, limit)),
                 Sort.by("desc".equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC, sort));
         
         Query query = new Query();
@@ -426,6 +494,11 @@ public class LeadController {
                     .sourceId(lead.getSourceId())
                     .sourceName(sourceName)
                     .createdAt(lead.getCreatedAt())
+                    .income(lead.getIncome())
+                    .creditScore(lead.getCreditScore())
+                    .employmentType(lead.getEmploymentType())
+                    .loanAmount(lead.getLoanAmount())
+                    .converted(lead.getConverted())
                     .build();
         }).collect(Collectors.toList());
         
@@ -480,7 +553,12 @@ public class LeadController {
         LeadService.UpsertContext ctx = new LeadService.UpsertContext(
                 request.getPId() != null ? request.getPId().toUpperCase() : null,
                 request.getSourceId() != null ? request.getSourceId().toUpperCase() : null,
-                normalized
+                normalized,
+                request.getIncome(),
+                request.getCreditScore(),
+                request.getEmploymentType(),
+                request.getLoanAmount(),
+                request.getConverted()
         );
         
         LeadService.UpsertResult result = leadService.upsertLead(normalized, ctx);
@@ -531,6 +609,21 @@ public class LeadController {
                         if (!lead.getSourcesSeen().contains(sourceId)) {
                             lead.getSourcesSeen().add(sourceId);
                         }
+                    }
+                    if (updates.containsKey("income")) {
+                        lead.setIncome(parseIntegerOrNull(updates.get("income"), "income"));
+                    }
+                    if (updates.containsKey("creditScore")) {
+                        lead.setCreditScore(parseIntegerOrNull(updates.get("creditScore"), "creditScore"));
+                    }
+                    if (updates.containsKey("employmentType")) {
+                        lead.setEmploymentType(parseEmploymentTypeOrNull(updates.get("employmentType")));
+                    }
+                    if (updates.containsKey("loanAmount")) {
+                        lead.setLoanAmount(parseIntegerOrNull(updates.get("loanAmount"), "loanAmount"));
+                    }
+                    if (updates.containsKey("converted")) {
+                        lead.setConverted(parseBooleanOrNull(updates.get("converted"), "converted"));
                     }
                     
                     lead.setUpdatedAt(LocalDateTime.now());

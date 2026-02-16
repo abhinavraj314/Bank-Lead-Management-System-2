@@ -1,5 +1,6 @@
 package com.bankleads.bank_leads_backend.dto.response;
 
+import com.bankleads.bank_leads_backend.model.Lead;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,4 +25,9 @@ public class LeadDTO {
     private String sourceId;
     private String sourceName;
     private LocalDateTime createdAt;
+    private Integer income;
+    private Integer creditScore;
+    private Lead.EmploymentType employmentType;
+    private Integer loanAmount;
+    private Boolean converted;
 }
