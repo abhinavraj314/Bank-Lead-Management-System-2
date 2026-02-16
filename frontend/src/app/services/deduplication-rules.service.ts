@@ -1,74 +1,149 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { CanonicalField } from '../models/lead.models';
-import { environment } from '../../environments/environment';
+import { Observable, map, catchError, of, throwError } from 'rxjs';
+import { ApiService } from './api.service';
+import {
+  ApiResponse,
+  ProductDeduplicationConfig,
+  DeduplicationStats,
+} from '../models/lead.models';
 
 @Injectable({
   providedIn: 'root',
 })
 export class DeduplicationRulesService {
-  private readonly baseUrl = environment.apiUrl;
-
-  // Product-scoped deduplication rules storage
-  // Maps product_id -> array of canonical field IDs
-  private productRulesMap: Map<string, string[]> = new Map();
-
-  constructor(private http: HttpClient) {}
+  constructor(private apiService: ApiService) {}
 
   /**
-   * Get deduplication rules for a specific product
-   * @param productId The product ID
-   * @returns Observable of field IDs configured for this product
+   * Get deduplication config for a product from backend
+   * Returns canonical field names (email, phone_number, aadhar_number) used for deduplication
    */
   getRulesForProduct(productId: string): Observable<string[]> {
-    const rules = this.productRulesMap.get(productId) || [];
-    return of([...rules]);
+    const pId = productId?.toUpperCase() || '';
+    if (!pId) return of([]);
+
+    return this.apiService
+      .get<ApiResponse<ProductDeduplicationConfig>>(
+        `/deduplication/products/${encodeURIComponent(pId)}/config`
+      )
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) return [];
+          return response.data.deduplicationFields || [];
+        }),
+        catchError(() => of([]))
+      );
   }
 
   /**
-   * Save deduplication rules for a specific product
-   * @param productId The product ID
-   * @param fieldIds Array of canonical field IDs to use for deduplication
-   * @returns Observable indicating success
-   *
-   * In production, this would POST to: /api/deduplication-rules?product_id={productId}
+   * Save deduplication rules for a product to backend
+   * @param productId Product ID
+   * @param fieldNames Canonical field names: e.g. ["email", "phone_number", "aadhar_number"]
    */
-  saveRulesForProduct(productId: string, fieldIds: string[]): Observable<{ success: boolean }> {
-    this.productRulesMap.set(productId, [...fieldIds]);
-    console.log(`Deduplication rules saved for product ${productId}:`, fieldIds);
-    return of({ success: true });
+  saveRulesForProduct(
+    productId: string,
+    fieldNames: string[]
+  ): Observable<{ success: boolean }> {
+    const pId = productId?.toUpperCase() || '';
+    if (!pId) return throwError(() => new Error('Product ID is required'));
+
+    return this.apiService
+      .put<ApiResponse<unknown>>(
+        `/deduplication/products/${encodeURIComponent(pId)}/config`,
+        { deduplication_fields: fieldNames }
+      )
+      .pipe(
+        map((response) => ({ success: !!response.success })),
+        catchError((err) => throwError(() => err))
+      );
   }
 
   /**
-   * Execute deduplication on all leads
-   * @returns Observable of deduplication statistics
+   * Execute global deduplication (uses legacy global config)
+   * POST /api/deduplication/execute
    */
-  executeDeduplication(): Observable<any> {
-    return this.http.post<any>(`${this.baseUrl}/deduplication/execute`, {});
+  executeDeduplication(config?: {
+    useEmail?: boolean;
+    usePhone?: boolean;
+    useAadhar?: boolean;
+  }): Observable<DeduplicationStats> {
+    return this.apiService
+      .post<ApiResponse<DeduplicationStats>>('/deduplication/execute', config ?? {})
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data)
+            throw new Error(response.message || 'Deduplication failed');
+          return response.data;
+        }),
+        catchError((err) => throwError(() => err))
+      );
   }
 
   /**
-   * Clear rules for a product (typically when user changes product selection)
-   * @param productId The product ID
+   * Execute deduplication for a single product using that product's config
+   * POST /api/deduplication/execute/by-product?productId=X
    */
-  clearRulesForProduct(productId: string): void {
-    this.productRulesMap.delete(productId);
+  executeDeduplicationForProduct(
+    productId: string
+  ): Observable<DeduplicationStats> {
+    const pId = productId?.toUpperCase() || '';
+    if (!pId) return throwError(() => new Error('Product ID is required'));
+
+    return this.apiService
+      .post<ApiResponse<DeduplicationStats>>(
+        `/deduplication/execute/by-product?productId=${encodeURIComponent(pId)}`,
+        {}
+      )
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data)
+            throw new Error(response.message || 'Deduplication failed');
+          return response.data;
+        }),
+        catchError((err) => throwError(() => err))
+      );
   }
 
   /**
-   * Legacy: Get all selected fields (for backwards compatibility if needed)
-   * In production, this will call: GET /api/deduplication-rules
+   * Execute deduplication for all products (each uses its own config)
+   * POST /api/deduplication/execute/by-product/all
+   */
+  executeDeduplicationForAllProducts(): Observable<
+    Record<string, DeduplicationStats>
+  > {
+    return this.apiService
+      .post<ApiResponse<Record<string, DeduplicationStats>>>(
+        '/deduplication/execute/by-product/all',
+        {}
+      )
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data)
+            throw new Error(response.message || 'Deduplication failed');
+          return response.data;
+        }),
+        catchError((err) => throwError(() => err))
+      );
+  }
+
+  /**
+   * Clear rules for a product (client-side only; backend has persistent config)
+   * No-op since we now load from backend.
+   */
+  clearRulesForProduct(_productId: string): void {
+    // No longer needed - rules are stored in backend
+  }
+
+  /**
+   * Legacy: Get all selected fields (not used with per-product config)
    */
   getSelectedFields(): Observable<string[]> {
     return of([]);
   }
 
   /**
-   * Legacy: Save deduplication rules (for backwards compatibility if needed)
-   * In production, this will call: POST /api/deduplication-rules
+   * Legacy: Save deduplication rules (use saveRulesForProduct instead)
    */
-  saveDeduplicationRules(fieldIds: string[]): Observable<{ success: boolean }> {
+  saveDeduplicationRules(_fieldIds: string[]): Observable<{ success: boolean }> {
     return of({ success: true });
   }
 }

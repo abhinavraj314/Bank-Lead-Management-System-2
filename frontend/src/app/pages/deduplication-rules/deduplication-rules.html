@@ -9,15 +9,55 @@
     <p class="info-text">
       @if (isAdmin()) {
         Deduplication rules are defined per product. Select a product first to configure which
-        canonical fields should be used to identify duplicate leads.
+        canonical fields should be used to identify duplicate leads. Rules are saved permanently
+        in the database. You can overwrite them anytime by selecting a product and saving new rules.
       } @else {
         Canonical fields used to identify duplicate leads across all products.
       }
     </p>
   </div>
 
+  <!-- Saved rules for all products (Admin) -->
+  @if (isAdmin() && products().length > 0) {
+    <div class="content-card rules-overview-section">
+      <h2 class="section-title">Saved Rules for All Products</h2>
+      <p class="section-description">
+        Deduplication fields configured per product. Empty means default (email, phone_number, aadhar_number).
+      </p>
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Deduplication Fields</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (product of products(); track product.product_id) {
+            <tr>
+              <td>
+                <strong>{{ product.product_name }}</strong>
+                <span class="product-id-meta">({{ product.product_id }})</span>
+              </td>
+              <td>
+                @if (product.deduplication_fields && product.deduplication_fields.length > 0) {
+                  <span class="field-tags">
+                    @for (f of product.deduplication_fields; track f) {
+                      <span class="field-tag">{{ f }}</span>
+                    }
+                  </span>
+                } @else {
+                  <span class="default-text">Default (email, phone_number, aadhar_number)</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
   <div class="content-card">
-    <!-- Admin View: Step 1 - Product Selection -->
+    <!-- Admin View: Step 1 - Product Selection (to configure or overwrite rules) -->
     @if (isAdmin()) {
       <div class="section">
         <h2 class="section-title">Step 1: Select Product</h2>
@@ -25,8 +65,8 @@
         <div class="form-group">
           <label>Product <span class="required">*</span></label>
           <select
-            [(ngModel)]="selectedProduct"
-            (change)="onProductChanged(selectedProduct())"
+            [ngModel]="selectedProduct()"
+            (ngModelChange)="onProductChanged($event)"
             class="product-select"
           >
             <option value="">-- Select a Product --</option>
@@ -62,8 +102,8 @@
                 <label class="checkbox-label">
                   <input
                     type="checkbox"
-                    [checked]="field.field_id && isFieldSelected(field.field_id)"
-                    (change)="field.field_id && toggleField(field.field_id)"
+                    [checked]="isFieldSelected(field.field_name)"
+                    (change)="toggleField(field.field_name)"
                   />
                   <span class="field-info">
                     <span class="field-name">{{ field.display_name }}</span>
@@ -123,7 +163,7 @@
       </div>
     }
 
-    <!-- Save Button (Admin Only) -->
+    <!-- Actions (Admin Only) -->
     <div class="actions" *ngIf="isAdmin()">
       <button
         class="btn btn-primary"
@@ -131,6 +171,22 @@
         [disabled]="isSaving() || !selectedProduct()"
       >
         {{ isSaving() ? 'Saving...' : 'Save Deduplication Rules' }}
+      </button>
+      @if (selectedProduct()) {
+        <button
+          class="btn btn-secondary"
+          (click)="onExecuteForProduct()"
+          [disabled]="isExecuting()"
+        >
+          {{ isExecuting() ? 'Running...' : 'Run Deduplication for This Product' }}
+        </button>
+      }
+      <button
+        class="btn btn-secondary"
+        (click)="onExecuteForAllProducts()"
+        [disabled]="isExecuting()"
+      >
+        {{ isExecuting() ? 'Running...' : 'Run Deduplication for All Products' }}
       </button>
     </div>
 

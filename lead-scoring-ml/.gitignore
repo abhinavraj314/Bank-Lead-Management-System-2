@@ -1,0 +1,8 @@
+models/
+*.pkl
+*.txt
+!requirements.txt
+__pycache__/
+.env
+.venv/
+venv/
