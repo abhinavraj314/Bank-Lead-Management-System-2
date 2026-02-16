@@ -1,4 +1,4 @@
-# Lead Scoring – LightGBM Training
+# Lead Scoring - LightGBM Training
 
 Step 1 of the LightGBM lead scoring integration: train a model on your lead data.
 
@@ -17,7 +17,7 @@ Set `MONGODB_URI` to your connection string (same as `spring.data.mongodb.uri` i
 
 ```bash
 export MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/lead_management?retryWrites=true&w=majority"
-python train.py --limit 10000
+python train.py --limit 10000 --target-column converted
 ```
 
 ### Option B: From CSV
@@ -25,31 +25,42 @@ python train.py --limit 10000
 Export leads to CSV (from MongoDB Compass, `mongoexport`, or your backend) and train:
 
 ```bash
-python train.py --csv path/to/leads.csv
+python train.py --csv path/to/leads.csv --target-column converted
 ```
 
-CSV columns should map to Lead fields, e.g. `email`, `phoneNumber`, `aadharNumber`, `name`, `pId`, `sourceId`, `createdAt`, `sourcesSeen`, `productsSeen`.
+Target column must be binary labels (`0/1`, or `true/false`).
 
-### With real conversion target
+### Model configuration
 
-If you have conversion or qualification labels:
-
-```bash
-# CSV with a 'converted' column (0/1)
-python train.py --csv leads.csv --target-column converted
-
-# Or use leadScore from DB if already populated
-python train.py --target-column leadScore
-```
+The trainer uses:
+- LightGBM `objective=binary`
+- Metric `auc`
+- Predicted output: probability in `[0, 1]`
 
 ### Output
 
-- `models/lead_score_model.txt` – LightGBM model (used by the Python scoring service in Step 2)
-- `models/feature_config.json` – Feature names and metadata
+- `models/lead_score_model.txt` - LightGBM model
+- `models/feature_config.json` - Feature names and metadata
 
-## Default behaviour (no conversion data)
+## Inference (probability output)
 
-Without `--target-column`, the script uses the **rule-based score** as a proxy target. The model learns a similar pattern to your current `LeadScoringService`, and can later be retrained on real conversion data.
+Run inference to get probabilities in `[0, 1]` (no thresholding or rounding):
+
+```bash
+python predict.py --input leads.json --model models/lead_score_model.txt
+```
+
+Input can be:
+- a single lead JSON object
+- an array of lead objects
+
+Output:
+
+```json
+[
+  { "leadId": "L123", "probability": 0.8721 }
+]
+```
 
 ## Features
 
