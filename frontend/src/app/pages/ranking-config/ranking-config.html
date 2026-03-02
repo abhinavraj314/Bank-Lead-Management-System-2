@@ -1,12 +1,125 @@
+<!-- Scoring in progress modal: blur background, dismiss on backdrop click -->
+@if (showScoringModal()) {
+  <div
+    class="scoring-modal-backdrop"
+    (click)="closeScoringModal()"
+    role="button"
+    tabindex="0"
+    (keydown)="$event.key === 'Escape' && closeScoringModal()"
+  >
+    <div class="scoring-modal-box" (click)="$event.stopPropagation()">
+      <p class="scoring-modal-message">Scoring all leads, this may take a while.</p>
+      <p class="scoring-modal-hint">You can click outside to close this message. Scoring will continue in the background.</p>
+    </div>
+  </div>
+}
+
 <div class="ranking-config-page" *ngIf="isAdmin()">
   <div class="page-header">
-    <h1 class="page-title">Ranking Config</h1>
+    <h1 class="page-title">Lead Ranking & ML Scoring</h1>
+    <p class="page-description">Manage ML-based lead scoring to rank leads by conversion probability</p>
   </div>
 
+  <div class="config-cards-row">
+    <!-- ML Service Status -->
+    <div class="content-card">
+      <div class="card-header">
+        <h2 class="card-title">ML Service Status</h2>
+        <button class="btn btn-sm btn-secondary" (click)="checkMlStatus()" [disabled]="isCheckingStatus()">
+          {{ isCheckingStatus() ? 'Checking...' : '↻ Refresh' }}
+        </button>
+      </div>
+
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">Service</span>
+          <span class="status-value">
+            <span class="status-dot" [ngClass]="mlServiceAvailable() ? 'dot-green' : 'dot-red'"></span>
+            {{ mlServiceAvailable() ? 'Connected' : 'Disconnected' }}
+          </span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Scoring Method</span>
+          <span class="status-value">{{ scoringMethod() }}</span>
+        </div>
+      </div>
+
+      <div *ngIf="!mlServiceAvailable() && !isCheckingStatus()" class="alert alert-warning">
+        <strong>ML service not available.</strong> Scoring will use the heuristic fallback.
+        Start the Python ML service:
+        <code>cd lead-scoring-ml && python app.py</code>
+      </div>
+    </div>
+
+    <!-- Batch Scoring -->
+    <div class="content-card">
+      <div class="card-header">
+        <h2 class="card-title">Batch Score All Leads</h2>
+      </div>
+      <p class="card-description">
+        Score all leads in the database using the ML model. Leads will be ranked by their conversion probability.
+        {{ mlServiceAvailable() ? 'Using LightGBM ML model.' : 'ML service offline — will use heuristic fallback.' }}
+      </p>
+
+      <button
+        class="btn btn-primary btn-lg"
+        (click)="scoreAllLeads()"
+        [disabled]="isScoring()"
+      >
+        {{ isScoring() ? '⏳ Scoring in progress...' : '🚀 Score All Leads' }}
+      </button>
+
+      <div *ngIf="scoringResult()" class="alert alert-success" style="margin-top: 1.25rem;">
+        ✅ Scoring complete! {{ scoringResult()!.scoredCount }} of {{ scoringResult()!.totalLeads }} leads scored.
+        View ranked leads on the <strong>Leads</strong> page and click <strong>"Rank by Score"</strong>.
+      </div>
+
+      <div *ngIf="scoringError()" class="alert alert-error" style="margin-top: 1.25rem;">
+        ❌ {{ scoringError() }}
+      </div>
+    </div>
+  </div>
+  <!-- Training Instructions 
+   
   <div class="content-card">
-    <p class="placeholder-message">Ranking configuration will be added later</p>
+    <div class="card-header">
+      <h2 class="card-title">How to Train the ML Model</h2>
+    </div>
+    <div class="instructions">
+      <div class="step">
+        <span class="step-number">1</span>
+        <div class="step-content">
+          <strong>Install dependencies</strong>
+          <code>cd lead-scoring-ml && pip install -r requirements.txt</code>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-number">2</span>
+        <div class="step-content">
+          <strong>Train the model</strong> (from MongoDB)
+          <code>python train.py --target-column converted</code>
+          <span class="step-hint">Set MONGODB_URI env var to your MongoDB connection string</span>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-number">3</span>
+        <div class="step-content">
+          <strong>Start the scoring service</strong>
+          <code>python app.py</code>
+          <span class="step-hint">Runs on port 5001 by default</span>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-number">4</span>
+        <div class="step-content">
+          <strong>Score your leads</strong>
+          <span class="step-hint">Click "Score All Leads" above, then view ranked leads on the Leads page</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
+-->
 
 <div
   class="ranking-config-page"
@@ -18,3 +131,4 @@
     <p>Only administrators can access this page.</p>
   </div>
 </div>
+

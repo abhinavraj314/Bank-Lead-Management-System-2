@@ -1,11 +1,13 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, RouterOutlet } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { ToastService } from '../../services/toast.service';
+import { ToastContainerComponent } from '../toast-container/toast-container';
 
 @Component({
   selector: 'app-admin-layout',
-  imports: [CommonModule, RouterModule, RouterOutlet],
+  imports: [CommonModule, RouterModule, RouterOutlet, ToastContainerComponent],
   templateUrl: './admin-layout.html',
   styleUrl: './admin-layout.css',
 })
@@ -34,10 +36,12 @@ export class AdminLayout {
 
   currentUser: any = null;
   sidebarOpen = true;
+  showLogoutConfirm = signal(false);
 
   constructor(
     private apiService: ApiService,
     private router: Router,
+    private toast: ToastService,
   ) {
     this.currentUser = this.apiService.getCurrentUser();
   }
@@ -47,10 +51,18 @@ export class AdminLayout {
   }
 
   logout() {
-    if (confirm('Are you sure you want to logout?')) {
-      this.apiService.logout();
-      this.router.navigate(['/auth']);
-    }
+    this.showLogoutConfirm.set(true);
+  }
+
+  confirmLogout() {
+    this.showLogoutConfirm.set(false);
+    this.apiService.logout();
+    this.router.navigate(['/auth']);
+    this.toast.success('You have been logged out.');
+  }
+
+  cancelLogout() {
+    this.showLogoutConfirm.set(false);
   }
 
   get isAdmin(): boolean {

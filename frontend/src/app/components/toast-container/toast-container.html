@@ -1,0 +1,16 @@
+<div class="toast-container">
+  @for (toast of toastService.toasts(); track toast.id) {
+    <div
+      class="toast"
+      [ngClass]="{
+        'toast-success': toast.type === 'success',
+        'toast-error': toast.type === 'error',
+        'toast-info': toast.type === 'info'
+      }"
+      (click)="toastService.dismiss(toast.id)"
+    >
+      <span class="toast-message">{{ toast.message }}</span>
+    </div>
+  }
+</div>
+

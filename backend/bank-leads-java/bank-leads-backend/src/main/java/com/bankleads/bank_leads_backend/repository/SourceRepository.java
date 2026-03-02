@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,9 @@ public interface SourceRepository extends MongoRepository<Source, String> {
     // Find by sId (source ID field)
     @Query("{'sId': ?0}")
     Optional<Source> findBySId(String sId);
+    
+    @Query("{'sId': { $in: ?0 }}")
+    List<Source> findBySIdIn(Collection<String> sIds);
     
     @Query(value = "{'sId': ?0}", exists = true)
     boolean existsBySId(String sId);

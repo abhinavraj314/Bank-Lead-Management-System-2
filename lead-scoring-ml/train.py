@@ -20,6 +20,8 @@ import lightgbm as lgb
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from sklearn.metrics import roc_auc_score
+
 from features import FEATURE_NAMES, extract_features_from_lead, leads_to_dataframe
 
 
@@ -213,12 +215,7 @@ def main():
 
     # Quick evaluation
     pred_val = model.predict(X_val)
-    y_val_series = pd.Series(y_val).astype(int)
-    pred_val_series = pd.Series(pred_val)
-    pos = pred_val_series[y_val_series == 1]
-    neg = pred_val_series[y_val_series == 0]
-    auc = ((pos.values[:, None] > neg.values[None, :]).mean()
-           + 0.5 * (pos.values[:, None] == neg.values[None, :]).mean())
+    auc = roc_auc_score(y_val, pred_val)
     print(f"Validation AUC: {auc:.4f}")
 
 

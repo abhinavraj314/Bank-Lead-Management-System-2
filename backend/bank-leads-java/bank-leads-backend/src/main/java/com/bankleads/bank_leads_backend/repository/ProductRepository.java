@@ -5,6 +5,8 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -15,4 +17,7 @@ public interface ProductRepository extends MongoRepository<Product, String> {
     
     @Query("{'pId': ?0}")
     Optional<Product> findByPId(String pId);
+    
+    @Query("{'pId': { $in: ?0 }}")
+    List<Product> findByPIdIn(Collection<String> pIds);
 }

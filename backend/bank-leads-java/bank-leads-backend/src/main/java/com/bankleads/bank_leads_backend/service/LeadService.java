@@ -70,6 +70,7 @@ public class LeadService {
                 .employmentType(ctx.employmentType)
                 .loanAmount(ctx.loanAmount)
                 .converted(ctx.converted)
+                .status(Lead.LeadStatus.NEW)  // Default status for new leads
                 .build();
 
         // Defensive fix: guarantee leadId is never null/blank before insert.

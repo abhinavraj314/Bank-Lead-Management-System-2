@@ -3,7 +3,7 @@ Feature extraction for lead scoring.
 Must stay in sync with the Python scoring service and Java client.
 """
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # Ordered feature names - must match training and serving
@@ -19,6 +19,11 @@ FEATURE_NAMES = [
     "p_id_credit_card",
     "p_id_home_loan",
     "p_id_other",
+    "income",
+    "credit_score",
+    "loan_amount",
+    "emp_salaried",
+    "emp_self_employed",
 ]
 
 
@@ -37,6 +42,15 @@ def _non_empty(val) -> bool:
     return len(s) > 0
 
 
+def _safe_int(val, default: int = 0) -> int:
+    if val is None:
+        return default
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return default
+
+
 def extract_features_from_lead(lead: dict) -> dict:
     """
     Extract feature dict from a single lead (MongoDB document or API response).
@@ -51,23 +65,35 @@ def extract_features_from_lead(lead: dict) -> dict:
     created_at = _get(lead, "createdAt", "created_at")
     p_id = _get(lead, "pId", "p_id") or ""
 
-    # days_since_created (works with timezone-aware or naive datetimes)
+    # Financial fields
+    income = _safe_int(_get(lead, "income"))
+    credit_score = _safe_int(_get(lead, "creditScore", "credit_score"))
+    loan_amount = _safe_int(_get(lead, "loanAmount", "loan_amount"))
+    employment_type = str(_get(lead, "employmentType", "employment_type") or "").upper().strip()
+
+    # days_since_created (use UTC to avoid timezone mismatch)
     days = 0
     if created_at:
         try:
-            dt = pd.to_datetime(created_at)
-            now = pd.Timestamp.now()
-            diff_ns = now.value - dt.value
-            days = max(0, int(diff_ns / (86400 * 1e9)))
+            dt = pd.to_datetime(created_at, utc=True)
+            now = pd.Timestamp.now(tz="UTC")
+            days = max(0, (now - dt).days)
         except Exception:
             pass
 
-    # product one-hot (common product IDs; "other" as fallback)
+    # Product one-hot (mutually exclusive)
     p_upper = str(p_id).upper() if p_id else ""
-    p_id_personal_loan = 1 if "PERSONAL" in p_upper or "LOAN" in p_upper else 0
+    p_id_personal_loan = 1 if "PERSONAL" in p_upper else 0
     p_id_credit_card = 1 if "CREDIT" in p_upper or "CARD" in p_upper else 0
     p_id_home_loan = 1 if "HOME" in p_upper else 0
+    # Resolve conflicts: HOME_LOAN should only be home_loan, not personal_loan
+    if p_id_home_loan and p_id_personal_loan:
+        p_id_personal_loan = 0
     p_id_other = 1 if not (p_id_personal_loan or p_id_credit_card or p_id_home_loan) else 0
+
+    # Employment type one-hot
+    emp_salaried = 1 if employment_type == "SALARIED" else 0
+    emp_self_employed = 1 if employment_type == "SELF_EMPLOYED" else 0
 
     return {
         "has_email": 1 if _non_empty(email) else 0,
@@ -81,6 +107,11 @@ def extract_features_from_lead(lead: dict) -> dict:
         "p_id_credit_card": p_id_credit_card,
         "p_id_home_loan": p_id_home_loan,
         "p_id_other": p_id_other,
+        "income": income,
+        "credit_score": credit_score,
+        "loan_amount": loan_amount,
+        "emp_salaried": emp_salaried,
+        "emp_self_employed": emp_self_employed,
     }
 
 

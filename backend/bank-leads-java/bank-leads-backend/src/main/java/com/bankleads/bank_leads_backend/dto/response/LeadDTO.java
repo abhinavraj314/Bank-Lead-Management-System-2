@@ -30,4 +30,11 @@ public class LeadDTO {
     private Lead.EmploymentType employmentType;
     private Integer loanAmount;
     private Boolean converted;
+    private Double leadScore;
+    private String scoreReason;
+    private Lead.LeadStatus status;
+    private String assignedUserId;
+    private String assignedUserName;
+    private LocalDateTime statusUpdatedAt;
+    private LocalDateTime assignedAt;
 }

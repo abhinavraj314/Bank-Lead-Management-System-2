@@ -1,8 +1,9 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ProductService } from '../../services/product.service';
 import { ApiService } from '../../services/api.service';
+import { ToastService } from '../../services/toast.service';
 import { ProductWithStatus } from '../../models/lead.models';
 
 @Component({
@@ -14,6 +15,8 @@ import { ProductWithStatus } from '../../models/lead.models';
 export class ProductsPage implements OnInit {
   private readonly productService = inject(ProductService);
   private readonly apiService = inject(ApiService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly toast = inject(ToastService);
 
   protected readonly products = signal<ProductWithStatus[]>([]);
   protected readonly showCreateModal = signal<boolean>(false);
@@ -24,7 +27,9 @@ export class ProductsPage implements OnInit {
   protected newProductName = '';
 
   ngOnInit(): void {
-    this.loadProducts();
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadProducts();
+    }
   }
 
   isAdmin(): boolean {
@@ -97,7 +102,7 @@ export class ProductsPage implements OnInit {
       },
       error: (error) => {
         this.isDeleting.set(false);
-        alert('Failed to delete product: ' + (error.message || 'Unknown error'));
+        this.toast.error('Failed to delete product: ' + (error.message || 'Unknown error'));
       },
     });
   }

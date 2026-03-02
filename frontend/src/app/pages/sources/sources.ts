@@ -1,9 +1,10 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SourceService } from '../../services/source.service';
 import { ProductService } from '../../services/product.service';
 import { ApiService } from '../../services/api.service';
+import { ToastService } from '../../services/toast.service';
 import { Source } from '../../models/lead.models';
 
 @Component({
@@ -16,6 +17,8 @@ export class SourcesPage implements OnInit {
   private readonly sourceService = inject(SourceService);
   private readonly productService = inject(ProductService);
   private readonly apiService = inject(ApiService);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly toast = inject(ToastService);
 
   protected readonly sources = signal<Source[]>([]);
   protected readonly products = signal<{ product_id: string; product_name: string }[]>([]);
@@ -33,8 +36,10 @@ export class SourcesPage implements OnInit {
   };
 
   ngOnInit(): void {
-    this.loadSources();
-    this.loadProducts();
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadSources();
+      this.loadProducts();
+    }
   }
 
   isAdmin(): boolean {
@@ -177,7 +182,7 @@ export class SourcesPage implements OnInit {
       },
       error: (error) => {
         this.isDeleting.set(false);
-        alert('Failed to delete source: ' + (error.message || 'Unknown error'));
+        this.toast.error('Failed to delete source: ' + (error.message || 'Unknown error'));
       },
     });
   }

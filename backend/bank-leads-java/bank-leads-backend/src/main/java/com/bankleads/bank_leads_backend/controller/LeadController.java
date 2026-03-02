@@ -7,14 +7,17 @@ import com.bankleads.bank_leads_backend.model.CanonicalField;
 import com.bankleads.bank_leads_backend.model.Lead;
 import com.bankleads.bank_leads_backend.model.Product;
 import com.bankleads.bank_leads_backend.model.Source;
+import com.bankleads.bank_leads_backend.model.User;
 import com.bankleads.bank_leads_backend.repository.CanonicalFieldRepository;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
 import com.bankleads.bank_leads_backend.repository.ProductRepository;
 import com.bankleads.bank_leads_backend.repository.SourceRepository;
+import com.bankleads.bank_leads_backend.repository.UserRepository;
 import com.bankleads.bank_leads_backend.service.CanonicalFieldDeduplicationService;
 import com.bankleads.bank_leads_backend.service.DeduplicationService;
 import com.bankleads.bank_leads_backend.service.LeadScoringService;
 import com.bankleads.bank_leads_backend.service.LeadService;
+import com.bankleads.bank_leads_backend.service.LeadStateService;
 import com.bankleads.bank_leads_backend.util.CsvParserUtil;
 import com.bankleads.bank_leads_backend.util.CsvValidationUtil;
 import com.bankleads.bank_leads_backend.util.LeadNormalizationUtil;
@@ -37,9 +40,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RestController
@@ -54,10 +61,12 @@ public class LeadController {
     private final ProductRepository productRepository;
     private final SourceRepository sourceRepository;
     private final CanonicalFieldRepository canonicalFieldRepository;
+    private final UserRepository userRepository;
     private final LeadService leadService;
     private final LeadScoringService leadScoringService;
     private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
     private final DeduplicationService deduplicationService;
+    private final LeadStateService leadStateService;
     private final MongoTemplate mongoTemplate;
     
     
@@ -430,15 +439,34 @@ public class LeadController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String assigned_user_id,
+            @RequestParam(required = false) Boolean assigned_to_me,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "createdAt") String sort,
-            @RequestParam(defaultValue = "desc") String order) {
+            @RequestParam(defaultValue = "desc") String order,
+            HttpServletRequest request) {
         
         Pageable pageable = PageRequest.of(page - 1, Math.min(10000, Math.max(1, limit)),
                 Sort.by("desc".equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC, sort));
         
+        // Get current user info for role-based filtering
+        String currentUserId = getCurrentUserId(request);
+        boolean isAdmin = isCurrentUserAdmin(request);
+        
         Query query = new Query();
+        
+        // Role-based filtering: sales users see only their assigned leads
+        if (!isAdmin && assigned_to_me == null && assigned_user_id == null) {
+            // Default: sales users see only their leads
+            if (currentUserId != null) {
+                query.addCriteria(Criteria.where("assignedUserId").is(currentUserId));
+            } else {
+                // No user context: return empty (or could return unassigned only)
+                query.addCriteria(Criteria.where("assignedUserId").is(null));
+            }
+        }
         
         if (p_id != null) {
             query.addCriteria(Criteria.where("pId").is(p_id.toUpperCase()));
@@ -446,6 +474,30 @@ public class LeadController {
         
         if (source_id != null) {
             query.addCriteria(Criteria.where("sourceId").is(source_id.toUpperCase()));
+        }
+        
+        // Status filter
+        if (status != null && !status.trim().isEmpty()) {
+            try {
+                Lead.LeadStatus statusEnum = Lead.LeadStatus.valueOf(status.trim().toUpperCase());
+                query.addCriteria(Criteria.where("status").is(statusEnum));
+            } catch (IllegalArgumentException e) {
+                return ResponseUtil.error("Invalid status: " + status, HttpStatus.BAD_REQUEST);
+            }
+        }
+        
+        // Assignment filter
+        if (assigned_to_me != null && assigned_to_me && currentUserId != null) {
+            query.addCriteria(Criteria.where("assignedUserId").is(currentUserId));
+        } else if (assigned_user_id != null) {
+            if (!isAdmin) {
+                return ResponseUtil.error("Only admins can filter by assigned_user_id", HttpStatus.FORBIDDEN);
+            }
+            if (assigned_user_id.trim().equalsIgnoreCase("unassigned") || assigned_user_id.trim().isEmpty()) {
+                query.addCriteria(Criteria.where("assignedUserId").is(null));
+            } else {
+                query.addCriteria(Criteria.where("assignedUserId").is(assigned_user_id.trim()));
+            }
         }
         
         if (from != null || to != null) {
@@ -461,27 +513,39 @@ public class LeadController {
         
         if (q != null && !q.trim().isEmpty()) {
             String searchTerm = q.trim();
+            if (searchTerm.length() > 200) {
+                searchTerm = searchTerm.substring(0, 200);
+            }
+            String escaped = Pattern.quote(searchTerm);
             query.addCriteria(new Criteria().orOperator(
-                    Criteria.where("name").regex(searchTerm, "i"),
-                    Criteria.where("email").regex(searchTerm, "i"),
-                    Criteria.where("phoneNumber").regex(searchTerm, "i")
+                    Criteria.where("name").regex(escaped, "i"),
+                    Criteria.where("email").regex(escaped, "i"),
+                    Criteria.where("phoneNumber").regex(escaped, "i")
             ));
         }
         
         long total = mongoTemplate.count(query, Lead.class);
         List<Lead> leads = mongoTemplate.find(query.with(pageable), Lead.class);
         
-        // Enrich leads with product and source names
+        // Batch load product and source names (avoid N+1)
+        Set<String> pIds = leads.stream().map(Lead::getPId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<String> sourceIds = leads.stream().map(Lead::getSourceId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<String> assignedUserIds = leads.stream().map(Lead::getAssignedUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+        
+        Map<String, String> productNames = productRepository.findByPIdIn(pIds).stream()
+                .collect(Collectors.toMap(Product::getPId, Product::getPName, (a, b) -> a));
+        Map<String, String> sourceNames = sourceRepository.findBySIdIn(sourceIds).stream()
+                .collect(Collectors.toMap(Source::getSId, Source::getSName, (a, b) -> a));
+        Map<String, String> userNames = userRepository.findAllById(assignedUserIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u.getUsername() != null ? u.getUsername() : u.getEmail(), (a, b) -> a));
+        
+        Map<String, String> productNamesFinal = productNames;
+        Map<String, String> sourceNamesFinal = sourceNames;
+        Map<String, String> userNamesFinal = userNames;
         List<LeadDTO> enrichedLeads = leads.stream().map(lead -> {
-            String productName = lead.getPId() != null ? 
-                productRepository.findByPId(lead.getPId())
-                    .map(Product::getPName)
-                    .orElse("") : "";
-            
-            String sourceName = lead.getSourceId() != null ? 
-                sourceRepository.findBySourceId(lead.getSourceId())
-                    .map(Source::getSName)
-                    .orElse("") : "";
+            String productName = lead.getPId() != null ? productNamesFinal.getOrDefault(lead.getPId(), "") : "";
+            String sourceName = lead.getSourceId() != null ? sourceNamesFinal.getOrDefault(lead.getSourceId(), "") : "";
+            String assignedUserName = lead.getAssignedUserId() != null ? userNamesFinal.getOrDefault(lead.getAssignedUserId(), "") : "";
             
             return LeadDTO.builder()
                     .leadId(lead.getLeadId())
@@ -499,6 +563,13 @@ public class LeadController {
                     .employmentType(lead.getEmploymentType())
                     .loanAmount(lead.getLoanAmount())
                     .converted(lead.getConverted())
+                    .leadScore(lead.getLeadScore())
+                    .scoreReason(lead.getScoreReason())
+                    .status(lead.getStatus())
+                    .assignedUserId(lead.getAssignedUserId())
+                    .assignedUserName(assignedUserName)
+                    .statusUpdatedAt(lead.getStatusUpdatedAt())
+                    .assignedAt(lead.getAssignedAt())
                     .build();
         }).collect(Collectors.toList());
         
@@ -679,5 +750,345 @@ public class LeadController {
                 })
                 .orElse(ResponseUtil.error("Lead with lead_id '" + id + "' not found",
                         HttpStatus.NOT_FOUND));
+    }
+    
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/score-all")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> scoreAllLeads() {
+        List<Lead> allLeads = leadRepository.findAll();
+        log.info("Batch scoring {} leads", allLeads.size());
+        
+        int scoredCount = leadScoringService.batchScoreLeads(allLeads);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalLeads", allLeads.size());
+        result.put("scoredCount", scoredCount);
+        
+        log.info("Batch scoring completed: {}/{} leads scored", scoredCount, allLeads.size());
+        return ResponseUtil.success(result, "Leads scored successfully");
+    }
+    
+    @GetMapping("/ml-status")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMlStatus() {
+        Map<String, Object> status = new HashMap<>();
+        boolean available = leadScoringService.isMlServiceAvailable();
+        status.put("mlServiceAvailable", available);
+        status.put("scoringMethod", available
+                ? "ML service connected (LightGBM if model loaded, otherwise heuristic fallback)"
+                : "Heuristic fallback (ML service unreachable)");
+        return ResponseUtil.success(status);
+    }
+    
+    // ==================== Lead Lifecycle & Assignment ====================
+    
+    /**
+     * Update lead status (lifecycle state).
+     * Sales users can only update leads assigned to them and only valid transitions.
+     * Admins can make any transition.
+     */
+    @PatchMapping("/{id}/state")
+    public ResponseEntity<ApiResponse<LeadDTO>> updateLeadState(
+            @PathVariable String id,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
+        
+        String statusStr = body.get("status");
+        if (statusStr == null || statusStr.trim().isEmpty()) {
+            return ResponseUtil.error("status is required", HttpStatus.BAD_REQUEST);
+        }
+        
+        Lead.LeadStatus newStatus;
+        try {
+            newStatus = Lead.LeadStatus.valueOf(statusStr.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return ResponseUtil.error("Invalid status: " + statusStr, HttpStatus.BAD_REQUEST);
+        }
+        
+        return leadRepository.findByLeadId(id)
+                .map(lead -> {
+                    String currentUserId = getCurrentUserId(request);
+                    boolean isAdmin = isCurrentUserAdmin(request);
+                    
+                    // Check permission
+                    if (!leadStateService.canUpdateState(lead, currentUserId, isAdmin)) {
+                        return ResponseUtil.<LeadDTO>error(
+                            "You can only update leads assigned to you",
+                            HttpStatus.FORBIDDEN
+                        );
+                    }
+                    
+                    // Validate and update state
+                    try {
+                        leadStateService.updateStatus(lead, newStatus, isAdmin);
+                        leadRepository.save(lead);
+                        
+                        // Return enriched DTO
+                        return enrichLeadToDTO(lead)
+                                .map(dto -> ResponseUtil.success(dto, "Lead status updated"))
+                                .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
+                    } catch (IllegalArgumentException e) {
+                        return ResponseUtil.<LeadDTO>error(e.getMessage(), HttpStatus.BAD_REQUEST);
+                    }
+                })
+                .orElse(ResponseUtil.<LeadDTO>error("Lead not found: " + id, HttpStatus.NOT_FOUND));
+    }
+    
+    /**
+     * Update lead assignment.
+     * Admins can assign to any user or unassign (null).
+     * Sales users can self-assign unassigned leads only.
+     */
+    @PatchMapping("/{id}/assignment")
+    public ResponseEntity<ApiResponse<LeadDTO>> updateLeadAssignment(
+            @PathVariable String id,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
+        
+        String assignedUserId = body.get("assignedUserId");
+        String currentUserId = getCurrentUserId(request);
+        boolean isAdmin = isCurrentUserAdmin(request);
+        
+        return leadRepository.findByLeadId(id)
+                .map(lead -> {
+                    // Sales users: can only self-assign unassigned leads
+                    if (!isAdmin) {
+                        if (lead.getAssignedUserId() != null) {
+                            return ResponseUtil.<LeadDTO>error(
+                                "Lead is already assigned. Only admins can reassign.",
+                                HttpStatus.FORBIDDEN
+                            );
+                        }
+                        if (assignedUserId == null || !assignedUserId.equals(currentUserId)) {
+                            return ResponseUtil.<LeadDTO>error(
+                                "You can only assign leads to yourself",
+                                HttpStatus.FORBIDDEN
+                            );
+                        }
+                    }
+                    
+                    // Admin: can assign to any user or unassign
+                    if (isAdmin && assignedUserId != null && !assignedUserId.trim().isEmpty()) {
+                        // Verify user exists
+                        if (!userRepository.existsById(assignedUserId.trim())) {
+                            return ResponseUtil.<LeadDTO>error("User not found: " + assignedUserId, HttpStatus.BAD_REQUEST);
+                        }
+                        User user = userRepository.findById(assignedUserId.trim()).orElse(null);
+                        lead.setAssignedUserId(assignedUserId.trim());
+                        lead.setAssignedUserName(user != null ? (user.getUsername() != null ? user.getUsername() : user.getEmail()) : null);
+                    } else {
+                        // Unassign
+                        lead.setAssignedUserId(null);
+                        lead.setAssignedUserName(null);
+                    }
+                    
+                    lead.setAssignedAt(LocalDateTime.now());
+                    leadRepository.save(lead);
+                    
+                    return enrichLeadToDTO(lead)
+                            .map(dto -> ResponseUtil.success(dto, "Lead assignment updated"))
+                            .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
+                })
+                .orElse(ResponseUtil.<LeadDTO>error("Lead not found: " + id, HttpStatus.NOT_FOUND));
+    }
+    
+    /**
+     * Self-assign an unassigned lead (convenience endpoint for sales users).
+     */
+    @PatchMapping("/{id}/assignment/self")
+    public ResponseEntity<ApiResponse<LeadDTO>> selfAssignLead(
+            @PathVariable String id,
+            HttpServletRequest request) {
+        
+        String currentUserId = getCurrentUserId(request);
+        if (currentUserId == null) {
+            return ResponseUtil.error("Authentication required", HttpStatus.UNAUTHORIZED);
+        }
+        
+        return leadRepository.findByLeadId(id)
+                .map(lead -> {
+                    if (lead.getAssignedUserId() != null) {
+                        return ResponseUtil.<LeadDTO>error(
+                            "Lead is already assigned to: " + lead.getAssignedUserId(),
+                            HttpStatus.BAD_REQUEST
+                        );
+                    }
+                    
+                    User user = userRepository.findById(currentUserId).orElse(null);
+                    if (user == null) {
+                        return ResponseUtil.<LeadDTO>error("User not found", HttpStatus.NOT_FOUND);
+                    }
+                    
+                    lead.setAssignedUserId(currentUserId);
+                    lead.setAssignedUserName(user.getUsername() != null ? user.getUsername() : user.getEmail());
+                    lead.setAssignedAt(LocalDateTime.now());
+                    leadRepository.save(lead);
+                    
+                    return enrichLeadToDTO(lead)
+                            .map(dto -> ResponseUtil.success(dto, "Lead assigned to you"))
+                            .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
+                })
+                .orElse(ResponseUtil.<LeadDTO>error("Lead not found: " + id, HttpStatus.NOT_FOUND));
+    }
+    
+    /**
+     * Combined update endpoint: update status and/or assignment in one call.
+     * Useful for inline editing from the Leads tab.
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<ApiResponse<LeadDTO>> updateLead(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> updates,
+            HttpServletRequest request) {
+        
+        String currentUserId = getCurrentUserId(request);
+        boolean isAdmin = isCurrentUserAdmin(request);
+        
+        return leadRepository.findByLeadId(id)
+                .map(lead -> {
+                    // Check permission
+                    if (!leadStateService.canUpdateState(lead, currentUserId, isAdmin)) {
+                        return ResponseUtil.<LeadDTO>error(
+                            "You can only update leads assigned to you",
+                            HttpStatus.FORBIDDEN
+                        );
+                    }
+                    
+                    // Update status if provided
+                    if (updates.containsKey("status")) {
+                        Object statusObj = updates.get("status");
+                        if (statusObj != null) {
+                            try {
+                                Lead.LeadStatus newStatus = Lead.LeadStatus.valueOf(statusObj.toString().trim().toUpperCase());
+                                leadStateService.updateStatus(lead, newStatus, isAdmin);
+                            } catch (IllegalArgumentException e) {
+                                return ResponseUtil.<LeadDTO>error("Invalid status: " + statusObj, HttpStatus.BAD_REQUEST);
+                            }
+                        }
+                    }
+                    
+                    // Update assignment if provided (admin only for reassignment)
+                    if (updates.containsKey("assignedUserId")) {
+                        Object assignedUserIdObj = updates.get("assignedUserId");
+                        String assignedUserId = assignedUserIdObj == null ? null : assignedUserIdObj.toString().trim();
+                        
+                        if (!isAdmin && lead.getAssignedUserId() != null && assignedUserId != null && !assignedUserId.equals(lead.getAssignedUserId())) {
+                            return ResponseUtil.<LeadDTO>error(
+                                "Only admins can reassign leads",
+                                HttpStatus.FORBIDDEN
+                            );
+                        }
+                        
+                        if (assignedUserId == null || assignedUserId.isEmpty()) {
+                            // Unassign
+                            lead.setAssignedUserId(null);
+                            lead.setAssignedUserName(null);
+                        } else {
+                            // Assign
+                            if (!isAdmin && !assignedUserId.equals(currentUserId)) {
+                                return ResponseUtil.<LeadDTO>error(
+                                    "You can only assign leads to yourself",
+                                    HttpStatus.FORBIDDEN
+                                );
+                            }
+                            User user = userRepository.findById(assignedUserId).orElse(null);
+                            if (user == null) {
+                                return ResponseUtil.<LeadDTO>error("User not found: " + assignedUserId, HttpStatus.BAD_REQUEST);
+                            }
+                            lead.setAssignedUserId(assignedUserId);
+                            lead.setAssignedUserName(user.getUsername() != null ? user.getUsername() : user.getEmail());
+                        }
+                        lead.setAssignedAt(LocalDateTime.now());
+                    }
+                    
+                    leadRepository.save(lead);
+                    
+                    return enrichLeadToDTO(lead)
+                            .map(dto -> ResponseUtil.success(dto, "Lead updated"))
+                            .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
+                })
+                .orElse(ResponseUtil.<LeadDTO>error("Lead not found: " + id, HttpStatus.NOT_FOUND));
+    }
+    
+    // ==================== Helper Methods ====================
+    
+    /**
+     * Get current user ID from Authorization header (token is user ID).
+     */
+    private String getCurrentUserId(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7).trim();
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof String username) {
+            User user = userRepository.findByUsername(username).orElse(null);
+            return user != null ? user.getId() : null;
+        }
+        return null;
+    }
+    
+    /**
+     * Check if current user is admin.
+     */
+    private boolean isCurrentUserAdmin(HttpServletRequest request) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            return auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        }
+        return false;
+    }
+    
+    /**
+     * Enrich a single lead to LeadDTO (with product/source/user names).
+     */
+    private Optional<LeadDTO> enrichLeadToDTO(Lead lead) {
+        String productName = "";
+        if (lead.getPId() != null) {
+            productName = productRepository.findByPId(lead.getPId())
+                    .map(Product::getPName)
+                    .orElse("");
+        }
+        
+        String sourceName = "";
+        if (lead.getSourceId() != null) {
+            sourceName = sourceRepository.findBySourceId(lead.getSourceId())
+                    .map(Source::getSName)
+                    .orElse("");
+        }
+        
+        String assignedUserName = "";
+        if (lead.getAssignedUserId() != null) {
+            assignedUserName = userRepository.findById(lead.getAssignedUserId())
+                    .map(u -> u.getUsername() != null ? u.getUsername() : u.getEmail())
+                    .orElse("");
+        }
+        
+        LeadDTO dto = LeadDTO.builder()
+                .leadId(lead.getLeadId())
+                .name(lead.getName())
+                .email(lead.getEmail())
+                .phoneNumber(lead.getPhoneNumber())
+                .aadharNumber(lead.getAadharNumber())
+                .pId(lead.getPId())
+                .productName(productName)
+                .sourceId(lead.getSourceId())
+                .sourceName(sourceName)
+                .createdAt(lead.getCreatedAt())
+                .income(lead.getIncome())
+                .creditScore(lead.getCreditScore())
+                .employmentType(lead.getEmploymentType())
+                .loanAmount(lead.getLoanAmount())
+                .converted(lead.getConverted())
+                .leadScore(lead.getLeadScore())
+                .scoreReason(lead.getScoreReason())
+                .status(lead.getStatus())
+                .assignedUserId(lead.getAssignedUserId())
+                .assignedUserName(assignedUserName)
+                .statusUpdatedAt(lead.getStatusUpdatedAt())
+                .assignedAt(lead.getAssignedAt())
+                .build();
+        
+        return Optional.of(dto);
     }
 }

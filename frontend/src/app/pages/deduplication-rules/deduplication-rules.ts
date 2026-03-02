@@ -1,5 +1,5 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CanonicalFieldService } from '../../services/canonical-field.service';
 import { DeduplicationRulesService } from '../../services/deduplication-rules.service';
@@ -18,6 +18,7 @@ export class DeduplicationRulesPage implements OnInit {
   private readonly deduplicationRulesService = inject(DeduplicationRulesService);
   private readonly productService = inject(ProductService);
   private readonly apiService = inject(ApiService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly products = signal<Product[]>([]);
   protected readonly fields = signal<CanonicalField[]>([]);
@@ -29,8 +30,10 @@ export class DeduplicationRulesPage implements OnInit {
   protected readonly successMessage = signal<string>('');
 
   ngOnInit(): void {
-    this.loadProducts();
-    this.loadFields();
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadProducts();
+      this.loadFields();
+    }
   }
 
   isAdmin(): boolean {

@@ -25,11 +25,19 @@ import java.util.UUID;
 @Document(collection = "leads")
 @CompoundIndex(name = "lead_identifiers_index", def = "{'email': 1, 'phoneNumber': 1, 'aadharNumber': 1}")
 @CompoundIndex(name = "lead_dashboard_index", def = "{'pId': 1, 'sourceId': 1, 'createdAt': -1}")
+@CompoundIndex(name = "lead_assignment_index", def = "{'assignedUserId': 1, 'status': 1, 'createdAt': -1}")
 public class Lead {
     public enum EmploymentType {
         SALARIED,
         SELF_EMPLOYED,
         OTHER
+    }
+    
+    public enum LeadStatus {
+        NEW,
+        IN_PROGRESS,
+        QUALIFIED,
+        CLOSED
     }
     
     @Id
@@ -78,6 +86,16 @@ public class Lead {
     private EmploymentType employmentType;
     private Integer loanAmount;
     private Boolean converted;
+    
+    // Lead lifecycle and assignment
+    @Indexed
+    private LeadStatus status;              // Lifecycle state (NEW, IN_PROGRESS, QUALIFIED, CLOSED)
+    
+    @Indexed
+    private String assignedUserId;          // User.id of assigned salesperson (nullable)
+    private String assignedUserName;        // Denormalized for quick display (optional)
+    private LocalDateTime statusUpdatedAt;   // When status last changed
+    private LocalDateTime assignedAt;       // When assignment last changed
     
     @LastModifiedDate
     private LocalDateTime updatedAt;

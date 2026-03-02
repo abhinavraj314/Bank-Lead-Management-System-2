@@ -1,5 +1,5 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CanonicalFieldService } from '../../services/canonical-field.service';
 import { ApiService } from '../../services/api.service';
@@ -14,6 +14,7 @@ import { CanonicalField } from '../../models/lead.models';
 export class CanonicalFieldsPage implements OnInit {
   private readonly canonicalFieldService = inject(CanonicalFieldService);
   private readonly apiService = inject(ApiService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly fields = signal<CanonicalField[]>([]);
   protected readonly showCreateModal = signal<boolean>(false);
@@ -30,7 +31,9 @@ export class CanonicalFieldsPage implements OnInit {
   };
 
   ngOnInit(): void {
-    this.loadFields();
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadFields();
+    }
   }
 
   isAdmin(): boolean {

@@ -8,8 +8,12 @@ export interface Lead {
   product_name?: string;
   source_id: string;
   source_name?: string;
-  status: 'new' | 'contacted' | 'converted' | 'rejected';
+  status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED' | 'new' | 'contacted' | 'converted' | 'rejected'; // Support both old and new
   created_at: string;
+  lead_score?: number | null;
+  score_reason?: string | null;
+  assigned_user_id?: string | null;
+  assigned_user_name?: string | null;
 }
 
 export interface Product {
@@ -54,6 +58,11 @@ export interface BackendLead {
   updatedAt?: string | Date;
   leadScore?: number | null;
   scoreReason?: string | null;
+  status?: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED';
+  assignedUserId?: string | null;
+  assignedUserName?: string | null;
+  statusUpdatedAt?: string | Date;
+  assignedAt?: string | Date;
   // Additional fields that might be present
   [key: string]: any;
 }

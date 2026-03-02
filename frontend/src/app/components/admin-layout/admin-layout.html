@@ -94,4 +94,27 @@
     </header>
     <router-outlet />
   </main>
+
+  <!-- Global toast notifications -->
+  <app-toast-container />
+
+  <!-- Logout confirmation toast/modal -->
+  @if (showLogoutConfirm()) {
+    <div class="logout-confirm-overlay" (click)="cancelLogout()">
+      <div class="logout-confirm-card" (click)="$event.stopPropagation()">
+        <div class="logout-confirm-title">Log out?</div>
+        <div class="logout-confirm-text">
+          You will be signed out of the Lead Management dashboard.
+        </div>
+        <div class="logout-confirm-actions">
+          <button type="button" class="btn btn-secondary" (click)="cancelLogout()">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-primary" (click)="confirmLogout()">
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>

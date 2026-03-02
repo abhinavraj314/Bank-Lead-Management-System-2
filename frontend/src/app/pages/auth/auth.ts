@@ -2,7 +2,7 @@ import { Component, PLATFORM_ID, Inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 
 @Component({
@@ -19,6 +19,7 @@ export class AuthComponent {
   successMessage = '';
   showLoginPassword = false;
   showSignupPassword = false;
+  private returnUrl = '/admin/dashboard';
 
   // Login fields
   loginUsername = '';
@@ -33,8 +34,13 @@ export class AuthComponent {
   constructor(
     private apiService: ApiService,
     private router: Router,
+    private route: ActivatedRoute,
     @Inject(PLATFORM_ID) private platformId: Object,
   ) {
+    const requested = this.route.snapshot.queryParamMap.get('returnUrl');
+    if (requested && requested.startsWith('/')) {
+      this.returnUrl = requested;
+    }
     this.checkIfAlreadyLoggedIn();
   }
 
@@ -42,7 +48,7 @@ export class AuthComponent {
     if (isPlatformBrowser(this.platformId)) {
       const token = localStorage.getItem('authToken');
       if (token) {
-        this.router.navigate(['/admin/dashboard']);
+        this.router.navigateByUrl(this.returnUrl);
       }
     }
   }
@@ -73,7 +79,7 @@ export class AuthComponent {
 
           this.successMessage = 'Login successful!';
           setTimeout(() => {
-            this.router.navigate(['/admin/dashboard']);
+            this.router.navigateByUrl(this.returnUrl);
           }, 1000);
         }
         this.loading = false;
@@ -101,7 +107,7 @@ export class AuthComponent {
 
           this.successMessage = 'Login successful!';
           setTimeout(() => {
-            this.router.navigate(['/admin/dashboard']);
+            this.router.navigateByUrl(this.returnUrl);
           }, 1000);
         }
         this.loading = false;
@@ -144,7 +150,7 @@ export class AuthComponent {
           }
 
           setTimeout(() => {
-            this.router.navigate(['/admin/dashboard']);
+            this.router.navigateByUrl(this.returnUrl);
           }, 1500);
         }
         this.loading = false;
