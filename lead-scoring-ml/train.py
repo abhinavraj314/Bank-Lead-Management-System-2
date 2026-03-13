@@ -16,6 +16,15 @@ import os
 import sys
 from pathlib import Path
 
+# Load .env from script dir or project root so MONGODB_URI is set
+try:
+    from dotenv import load_dotenv
+    _script_dir = Path(__file__).resolve().parent
+    load_dotenv(_script_dir / ".env")
+    load_dotenv(_script_dir.parent / ".env")
+except ImportError:
+    pass
+
 import lightgbm as lgb
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -25,14 +34,57 @@ from sklearn.metrics import roc_auc_score
 from features import FEATURE_NAMES, extract_features_from_lead, leads_to_dataframe
 
 
-def load_leads_from_mongodb(uri: str, limit: int = 50_000) -> list[dict]:
-    """Load leads from MongoDB (lead_management.leads)."""
+def load_leads_from_mongodb(uri: str, limit: int = 50_000, 
+                             start_date: str = None, end_date: str = None,
+                             date_field: str = "statusUpdatedAt") -> list[dict]:
+    """Load leads from MongoDB (lead_management.leads).
+    
+    Args:
+        uri: MongoDB connection URI
+        limit: Maximum number of leads to load
+        start_date: Start date filter (YYYY-MM-DD), optional
+        end_date: End date filter (YYYY-MM-DD), optional
+        date_field: Field to filter by date (default: statusUpdatedAt)
+    """
     from pymongo import MongoClient
+    from datetime import datetime
 
     client = MongoClient(uri)
     db = client.get_default_database()
     collection = db["leads"]
-    cursor = collection.find({}).limit(limit)
+    
+    query = {}
+    
+    # Add date range filter if provided
+    if start_date or end_date:
+        # Dates are stored as strings in ISO format, so query with string values
+        start_str = start_date if start_date else "1900-01-01"
+        end_str = end_date + "T23:59:59" if end_date else "2099-12-31T23:59:59"
+        
+        date_query = {"$gte": start_str, "$lte": end_str}
+        
+        # Combine status/state check with date field check using $and
+        query["$and"] = [
+            {"$or": [{"status": "CLOSED"}, {"state": "CLOSED"}]},
+            {"$or": [{"converted": True}, {"converted": False}]},
+            {"$or": [
+                {"statusUpdatedAt": date_query},
+                {"updatedAt": date_query}
+            ]}
+        ]
+    else:
+        # No date filter - just filter by status/state and converted
+        query["$or"] = [
+            {"status": "CLOSED"},
+            {"state": "CLOSED"}
+        ]
+        query["$or"] = [
+            {"converted": True},
+            {"converted": False}
+        ]
+    
+    print(f"Query: {query}")
+    cursor = collection.find(query).limit(limit)
     leads = list(cursor)
     # Convert ObjectId and datetime for JSON serialization in feature extraction
     for lead in leads:
@@ -90,6 +142,16 @@ def main():
     parser.add_argument("--output-dir", type=str, default="models", help="Directory to save model and config")
     parser.add_argument("--test-size", type=float, default=0.2, help="Fraction for test set (default 0.2)")
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--start-date", type=str, 
+                        help="Start date for filtering (YYYY-MM-DD). When set, only loads leads closed in this range.")
+    parser.add_argument("--end-date", type=str,
+                        help="End date for filtering (YYYY-MM-DD). When set, only loads leads closed in this range.")
+    parser.add_argument("--date-field", type=str, default="statusUpdatedAt",
+                        help="Date field to filter by (default: statusUpdatedAt, also checks updatedAt)")
+    parser.add_argument("--reload-url", type=str, default=None,
+                        help="URL to call after successful training (e.g. http://localhost:5001/reload)")
+    parser.add_argument("--min-leads", type=int, default=50,
+                        help="Minimum leads required for training (default: 50). If fewer, skip training.")
     args = parser.parse_args()
 
     # Load leads
@@ -107,14 +169,24 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
-        leads = load_leads_from_mongodb(uri, limit=args.limit)
-        print(f"Loaded {len(leads)} leads from MongoDB")
+        leads = load_leads_from_mongodb(
+            uri, 
+            limit=args.limit,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            date_field=args.date_field
+        )
+        if args.start_date and args.end_date:
+            print(f"Loaded {len(leads)} leads from MongoDB (date range: {args.start_date} to {args.end_date})")
+        else:
+            print(f"Loaded {len(leads)} leads from MongoDB")
 
-    if len(leads) < 50:
+    if len(leads) < args.min_leads:
         print(
-            "Warning: Very few leads. Consider adding more data for a meaningful model.",
+            f"Warning: Only {len(leads)} leads loaded (minimum: {args.min_leads}). Skipping training.",
             file=sys.stderr,
         )
+        sys.exit(0)  # Exit gracefully, not an error
 
     # Build feature matrix and binary target (0/1 only)
     df = leads_to_dataframe(leads, target_column=args.target_column)
@@ -217,6 +289,18 @@ def main():
     pred_val = model.predict(X_val)
     auc = roc_auc_score(y_val, pred_val)
     print(f"Validation AUC: {auc:.4f}")
+
+    # Optionally reload the live ML service
+    if args.reload_url:
+        try:
+            import requests
+            response = requests.post(args.reload_url, timeout=10)
+            if response.status_code == 200:
+                print(f"Successfully called reload: {args.reload_url}")
+            else:
+                print(f"Warning: Reload call failed with status {response.status_code}: {response.text}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: Failed to call reload URL: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

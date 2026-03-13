@@ -566,6 +566,7 @@ public class LeadController {
                     .leadScore(lead.getLeadScore())
                     .scoreReason(lead.getScoreReason())
                     .status(lead.getStatus())
+                    .state(lead.getState())
                     .assignedUserId(lead.getAssignedUserId())
                     .assignedUserName(assignedUserName)
                     .statusUpdatedAt(lead.getStatusUpdatedAt())
@@ -774,7 +775,7 @@ public class LeadController {
         boolean available = leadScoringService.isMlServiceAvailable();
         status.put("mlServiceAvailable", available);
         status.put("scoringMethod", available
-                ? "ML service connected (LightGBM if model loaded, otherwise heuristic fallback)"
+                ? "ML service connected"
                 : "Heuristic fallback (ML service unreachable)");
         return ResponseUtil.success(status);
     }
@@ -1083,6 +1084,7 @@ public class LeadController {
                 .leadScore(lead.getLeadScore())
                 .scoreReason(lead.getScoreReason())
                 .status(lead.getStatus())
+                .state(lead.getState())
                 .assignedUserId(lead.getAssignedUserId())
                 .assignedUserName(assignedUserName)
                 .statusUpdatedAt(lead.getStatusUpdatedAt())

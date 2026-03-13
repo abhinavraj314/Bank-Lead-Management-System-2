@@ -274,7 +274,7 @@
                     <select
                       class="assignment-select"
                       [ngModel]="lead.assigned_user_id || ''"
-                      [disabled]="updatingLeadId() === lead.lead_id"
+                      [disabled]="updatingLeadId() === lead.lead_id || lead.status === 'CLOSED'"
                       (ngModelChange)="updateLeadAssignment(lead.lead_id, $event || null)"
                     >
                       <option value="">Unassigned</option>
@@ -283,7 +283,9 @@
                       }
                     </select>
                   } @else {
-                    @if (lead.assigned_user_name) {
+                    @if (lead.status === 'CLOSED') {
+                      {{ lead.assigned_user_name || 'Unassigned' }}
+                    } @else if (lead.assigned_user_name) {
                       {{ lead.assigned_user_name }}
                     } @else {
                       <button

@@ -52,6 +52,8 @@ public class Lead {
     private String name;
     
     @Indexed
+    @Field("phNo")  // MongoDB field name
+    @JsonProperty("phNo")  // JSON serialization name
     private String phoneNumber;
     
     @Indexed
@@ -88,8 +90,12 @@ public class Lead {
     private Boolean converted;
     
     // Lead lifecycle and assignment
+    // Support both 'status' and 'state' fields - state is the primary field
     @Indexed
     private LeadStatus status;              // Lifecycle state (NEW, IN_PROGRESS, QUALIFIED, CLOSED)
+    
+    @Indexed
+    private LeadStatus state;               // Alias for status - preferred field
     
     @Indexed
     private String assignedUserId;          // User.id of assigned salesperson (nullable)

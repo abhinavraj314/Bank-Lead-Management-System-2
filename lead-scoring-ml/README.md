@@ -9,6 +9,8 @@ cd lead-scoring-ml
 pip install -r requirements.txt
 ```
 
+Optional: put `MONGODB_URI` and `FLASK_PORT` in a `.env` file in this directory (or project root). The app and `train.py` load `.env` automatically via `python-dotenv`.
+
 ## Step 1: Train the Model
 
 ### Option A: From MongoDB (same DB as Spring Boot)
@@ -41,11 +43,14 @@ The Flask API serves predictions to the Java backend:
 python app.py
 ```
 
-The service runs on port **5001** by default. Override with:
+The service runs on port **5001** by default. Override with `FLASK_PORT` or in `.env`.
 
-```bash
-FLASK_PORT=5001 python app.py
-```
+**If the website shows "ML service disconnected":**
+
+1. Start the ML service first: `python app.py` (from `lead-scoring-ml`). You should see e.g. `ML scoring service: http://127.0.0.1:5001`.
+2. Ensure the Java backend can reach that URL. Backend uses `app.ml.scoring-service-url` (default `http://localhost:5001`). Set in backend `.env`: `APP_ML_SCORING_SERVICE_URL=http://localhost:5001` (or `http://127.0.0.1:5001`).
+3. Test health manually: `curl http://localhost:5001/health` → should return `{"status":"ok", ...}`.
+4. If you have no model yet, train first: `python train.py --start-date ... --end-date ...` (or without date args for all CLOSED+converted). Then restart `app.py` or `POST /reload`. Without a model, `/health` still returns 200 so the backend shows "connected", but batch scoring will fail with 503 until the model is loaded.
 
 ### API Endpoints
 

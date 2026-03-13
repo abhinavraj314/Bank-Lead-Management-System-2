@@ -18,7 +18,16 @@ export class LeadService {
   /**
    * Get leads from Spring Boot backend. Uses limit=10000 by default to fetch all leads.
    */
-  getLeads(params?: { page?: number; limit?: number; p_id?: string; source_id?: string; q?: string; status?: string; assigned_user_id?: string; assigned_to_me?: boolean }): Observable<{ leads: Lead[]; total: number }> {
+  getLeads(params?: {
+    page?: number;
+    limit?: number;
+    p_id?: string;
+    source_id?: string;
+    q?: string;
+    status?: string;
+    assigned_user_id?: string;
+    assigned_to_me?: boolean;
+  }): Observable<{ leads: Lead[]; total: number }> {
     const page = params?.page ?? 1;
     const limit = params?.limit ?? 10000;
     let url = `/leads?page=${page}&limit=${limit}`;
@@ -26,7 +35,8 @@ export class LeadService {
     if (params?.source_id) url += `&source_id=${encodeURIComponent(params.source_id)}`;
     if (params?.q?.trim()) url += `&q=${encodeURIComponent(params.q.trim())}`;
     if (params?.status) url += `&status=${encodeURIComponent(params.status)}`;
-    if (params?.assigned_user_id) url += `&assigned_user_id=${encodeURIComponent(params.assigned_user_id)}`;
+    if (params?.assigned_user_id)
+      url += `&assigned_user_id=${encodeURIComponent(params.assigned_user_id)}`;
     if (params?.assigned_to_me) url += `&assigned_to_me=true`;
     return this.apiService.get<ApiResponse<Page<any>>>(url).pipe(
       map((response) => {
@@ -40,9 +50,7 @@ export class LeadService {
         const content: any[] =
           data == null ? [] : Array.isArray(data) ? data : (data.content ?? []);
         const totalFromPage =
-          data != null && !Array.isArray(data)
-            ? (data.totalElements ?? data.total)
-            : undefined;
+          data != null && !Array.isArray(data) ? (data.totalElements ?? data.total) : undefined;
         const totalFromPagination = response.pagination?.total;
         const total =
           totalFromPage ?? totalFromPagination ?? (Array.isArray(content) ? content.length : 0);
@@ -53,12 +61,16 @@ export class LeadService {
               lead_id: lead.leadId ?? lead['lead_id'] ?? '',
               name: lead.name ?? '',
               email: lead.email ?? '',
-              phone: lead.phoneNumber ?? lead['phone'] ?? '',
+              // Support phoneNumber, phNo, phone
+              phone: lead.phoneNumber ?? lead['phNo'] ?? lead['phone'] ?? '',
+              // Support pId, pid, product_id
               product_id: lead.pId ?? lead['pid'] ?? lead['product_id'] ?? '',
               product_name: lead.productName ?? lead['product_name'] ?? '',
+              // Support sourceId, source_id
               source_id: lead.sourceId ?? lead['source_id'] ?? '',
               source_name: lead.sourceName ?? lead['source_name'] ?? '',
-              status: (lead.status ?? 'new') as Lead['status'],
+              // Support status, state (state is used in the user's data)
+              status: ((lead.status ?? lead.state ?? '').toString().toUpperCase() || 'NEW') as Lead['status'],
               created_at: this.formatDate(lead.createdAt ?? lead['created_at']),
               lead_score:
                 lead.leadScore != null
@@ -138,77 +150,96 @@ export class LeadService {
    * Score all leads using ML model (batch scoring)
    */
   scoreAllLeads(): Observable<{ totalLeads: number; scoredCount: number }> {
-    return this.apiService.post<ApiResponse<{ totalLeads: number; scoredCount: number }>>('/leads/score-all', {}).pipe(
-      map((response) => {
-        if (!response.success || !response.data) {
-          throw new Error(response.message || 'Scoring failed');
-        }
-        return response.data;
-      }),
-    );
+    return this.apiService
+      .post<ApiResponse<{ totalLeads: number; scoredCount: number }>>('/leads/score-all', {})
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            throw new Error(response.message || 'Scoring failed');
+          }
+          return response.data;
+        }),
+      );
   }
 
   /**
    * Get ML service status
    */
   getMlStatus(): Observable<{ mlServiceAvailable: boolean; scoringMethod: string }> {
-    return this.apiService.get<ApiResponse<{ mlServiceAvailable: boolean; scoringMethod: string }>>('/leads/ml-status').pipe(
-      map((response) => {
-        if (!response.success || !response.data) {
-          return { mlServiceAvailable: false, scoringMethod: 'Unknown' };
-        }
-        return response.data;
-      }),
-      catchError(() => of({ mlServiceAvailable: false, scoringMethod: 'Unavailable' })),
-    );
+    return this.apiService
+      .get<ApiResponse<{ mlServiceAvailable: boolean; scoringMethod: string }>>('/leads/ml-status')
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            return { mlServiceAvailable: false, scoringMethod: 'Unknown' };
+          }
+          return response.data;
+        }),
+        catchError(() => of({ mlServiceAvailable: false, scoringMethod: 'Unavailable' })),
+      );
   }
 
   /**
    * Update lead status (lifecycle state)
    */
-  updateLeadStatus(leadId: string, status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED'): Observable<Lead> {
-    return this.apiService.patch<ApiResponse<BackendLead>>(`/leads/${leadId}/state`, { status }).pipe(
-      map((response) => {
-        if (!response.success || !response.data) {
-          throw new Error(response.message || 'Failed to update status');
-        }
-        return this.mapBackendLeadToLead(response.data);
-      }),
-    );
+  updateLeadStatus(
+    leadId: string,
+    status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED',
+  ): Observable<Lead> {
+    return this.apiService
+      .patch<ApiResponse<BackendLead>>(`/leads/${leadId}/state`, { status })
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            throw new Error(response.message || 'Failed to update status');
+          }
+          return this.mapBackendLeadToLead(response.data);
+        }),
+      );
   }
 
   /**
    * Update lead assignment
    */
   updateLeadAssignment(leadId: string, assignedUserId: string | null): Observable<Lead> {
-    return this.apiService.patch<ApiResponse<BackendLead>>(`/leads/${leadId}/assignment`, { assignedUserId }).pipe(
-      map((response) => {
-        if (!response.success || !response.data) {
-          throw new Error(response.message || 'Failed to update assignment');
-        }
-        return this.mapBackendLeadToLead(response.data);
-      }),
-    );
+    return this.apiService
+      .patch<ApiResponse<BackendLead>>(`/leads/${leadId}/assignment`, { assignedUserId })
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            throw new Error(response.message || 'Failed to update assignment');
+          }
+          return this.mapBackendLeadToLead(response.data);
+        }),
+      );
   }
 
   /**
    * Self-assign a lead (convenience method for sales users)
    */
   selfAssignLead(leadId: string): Observable<Lead> {
-    return this.apiService.patch<ApiResponse<BackendLead>>(`/leads/${leadId}/assignment/self`, {}).pipe(
-      map((response) => {
-        if (!response.success || !response.data) {
-          throw new Error(response.message || 'Failed to assign lead');
-        }
-        return this.mapBackendLeadToLead(response.data);
-      }),
-    );
+    return this.apiService
+      .patch<ApiResponse<BackendLead>>(`/leads/${leadId}/assignment/self`, {})
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            throw new Error(response.message || 'Failed to assign lead');
+          }
+          return this.mapBackendLeadToLead(response.data);
+        }),
+      );
   }
 
   /**
    * Update lead (status and/or assignment) - combined endpoint
    */
-  updateLead(leadId: string, updates: { status?: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED'; assignedUserId?: string | null }): Observable<Lead> {
+  updateLead(
+    leadId: string,
+    updates: {
+      status?: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED';
+      assignedUserId?: string | null;
+    },
+  ): Observable<Lead> {
     return this.apiService.patch<ApiResponse<BackendLead>>(`/leads/${leadId}`, updates).pipe(
       map((response) => {
         if (!response.success || !response.data) {
@@ -227,14 +258,23 @@ export class LeadService {
       lead_id: lead.leadId ?? lead['lead_id'] ?? '',
       name: lead.name ?? '',
       email: lead.email ?? '',
-      phone: lead.phoneNumber ?? lead['phone'] ?? '',
+      // Support phoneNumber, phNo, phone
+      phone: lead.phoneNumber ?? lead['phNo'] ?? lead['phone'] ?? '',
+      // Support pId, pid, product_id
       product_id: lead.pId ?? lead['pid'] ?? lead['product_id'] ?? '',
       product_name: lead['productName'] ?? lead['product_name'] ?? '',
+      // Support sourceId, source_id
       source_id: lead.sourceId ?? lead['source_id'] ?? '',
       source_name: lead['sourceName'] ?? lead['source_name'] ?? '',
-      status: (lead.status ?? 'new') as Lead['status'],
+      // Support status, state
+      status: ((lead.status ?? lead['state'] ?? '').toString().toUpperCase() || 'NEW') as Lead['status'],
       created_at: this.formatDate(lead.createdAt ?? lead['created_at']),
-      lead_score: lead.leadScore != null ? Number(lead.leadScore) : lead['lead_score'] != null ? Number(lead['lead_score']) : null,
+      lead_score:
+        lead.leadScore != null
+          ? Number(lead.leadScore)
+          : lead['lead_score'] != null
+            ? Number(lead['lead_score'])
+            : null,
       score_reason: lead.scoreReason ?? lead['score_reason'] ?? null,
       assigned_user_id: lead.assignedUserId ?? lead['assigned_user_id'] ?? null,
       assigned_user_name: lead.assignedUserName ?? lead['assigned_user_name'] ?? null,

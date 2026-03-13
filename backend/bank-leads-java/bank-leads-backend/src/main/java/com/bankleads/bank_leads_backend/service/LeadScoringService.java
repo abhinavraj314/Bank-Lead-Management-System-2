@@ -52,6 +52,7 @@ public class LeadScoringService {
             Map<String, Object> body = response.getBody();
             return body != null && "ok".equals(body.get("status"));
         } catch (Exception e) {
+            log.warn("ML service health check failed: url={}, error={}", mlServiceUrl + "/health", e.getMessage());
             return false;
         }
     }
@@ -84,30 +85,34 @@ public class LeadScoringService {
         return new ScoringResult(probability, "ML model prediction (LightGBM)", Map.of());
     }
 
+    private static final int BATCH_CHUNK_SIZE = 500;
+
     @SuppressWarnings("unchecked")
     private int batchScoreWithML(List<Lead> leads) {
-        List<Map<String, Object>> leadDataList = leads.stream()
-                .map(this::buildLeadDataMap)
-                .collect(Collectors.toList());
-
-        Map<String, Object> requestBody = Map.of("leads", leadDataList);
-
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                mlServiceUrl + "/predict", requestBody, Map.class);
-
-        Map<String, Object> body = response.getBody();
-        if (body == null || !body.containsKey("predictions")) {
-            throw new RuntimeException("Invalid ML service response");
-        }
-
-        List<Map<String, Object>> predictions = (List<Map<String, Object>>) body.get("predictions");
-
         Map<String, Double> scoreMap = new HashMap<>();
-        for (Map<String, Object> pred : predictions) {
-            String leadId = (String) pred.get("leadId");
-            double prob = ((Number) pred.get("probability")).doubleValue();
-            if (leadId != null) {
-                scoreMap.put(leadId, prob);
+        for (int i = 0; i < leads.size(); i += BATCH_CHUNK_SIZE) {
+            int end = Math.min(i + BATCH_CHUNK_SIZE, leads.size());
+            List<Lead> chunk = leads.subList(i, end);
+            List<Map<String, Object>> leadDataList = chunk.stream()
+                    .map(this::buildLeadDataMap)
+                    .collect(Collectors.toList());
+            Map<String, Object> requestBody = Map.of("leads", leadDataList);
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    mlServiceUrl + "/predict", requestBody, Map.class);
+
+            Map<String, Object> body = response.getBody();
+            if (body == null || !body.containsKey("predictions")) {
+                throw new RuntimeException("Invalid ML service response");
+            }
+
+            List<Map<String, Object>> predictions = (List<Map<String, Object>>) body.get("predictions");
+            for (Map<String, Object> pred : predictions) {
+                String leadId = (String) pred.get("leadId");
+                double prob = ((Number) pred.get("probability")).doubleValue();
+                if (leadId != null) {
+                    scoreMap.put(leadId, prob);
+                }
             }
         }
 

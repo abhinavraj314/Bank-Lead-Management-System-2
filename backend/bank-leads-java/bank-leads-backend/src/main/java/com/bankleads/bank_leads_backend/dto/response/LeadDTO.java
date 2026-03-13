@@ -2,6 +2,7 @@ package com.bankleads.bank_leads_backend.dto.response;
 
 import com.bankleads.bank_leads_backend.model.Lead;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +19,7 @@ public class LeadDTO {
     private String leadId;
     private String name;
     private String email;
+    @JsonProperty("phNo")
     private String phoneNumber;
     private String aadharNumber;
     private String pId;
@@ -33,6 +35,7 @@ public class LeadDTO {
     private Double leadScore;
     private String scoreReason;
     private Lead.LeadStatus status;
+    private Lead.LeadStatus state;  // Primary state field
     private String assignedUserId;
     private String assignedUserName;
     private LocalDateTime statusUpdatedAt;
