@@ -16,39 +16,26 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@Document(collection = "users")
-public class User {
-
+@Document(collection = "user_invitations")
+public class UserInvitation {
     @Id
     private String id;
 
-    @Indexed(unique = true)
-    private String username;
-
-    @Indexed(unique = true)
-    private String email;
-
-    private String password;
-
     @Indexed
-    private Role role;
+    private String email; // normalized lowercase
 
-    public enum AccountStatus {
-        ACTIVE,
-        INVITED
-    }
+    private User.Role role;
 
-    @Indexed
-    private AccountStatus accountStatus = AccountStatus.ACTIVE;
+    @Indexed(unique = true)
+    private String tokenHash;
+
+    private LocalDateTime expiresAt;
+    private LocalDateTime consumedAt;
 
     @CreatedDate
     private LocalDateTime createdAt;
 
     @LastModifiedDate
     private LocalDateTime updatedAt;
-
-    public enum Role {
-        USER,
-        ADMIN
-    }
 }
+

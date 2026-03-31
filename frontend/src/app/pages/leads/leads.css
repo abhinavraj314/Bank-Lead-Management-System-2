@@ -187,6 +187,27 @@
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
   align-items: center;
+  justify-content: flex-end;
+}
+
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-count {
+  min-width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .filter-select {
@@ -224,6 +245,67 @@
 .btn-sm {
   padding: 0.35rem 0.65rem;
   font-size: 0.8rem;
+}
+
+/* ---------- Generic Modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 14px;
+  width: 92%;
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.btn-close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 1rem 1.25rem;
+}
+
+.modal-footer {
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.filter-modal {
+  max-width: 520px;
 }
 
 /* ---------- Table ---------- */
@@ -297,8 +379,28 @@
 .sort-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: space-between;
   margin-bottom: 1rem;
+}
+
+.list-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #475569;
+  border: 1px solid #d1d5db;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.btn-ghost:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
 }
 
 /* Score Badge */

@@ -1,0 +1,38 @@
+# Spring Boot app config. Override with .env or env vars.
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/lead_management}
+
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.vectorstore.mongodb.autoconfigure.MongoDBAtlasVectorStoreAutoConfiguration
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+      enabled: true
+
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_STARTTLS_ENABLE:true}
+
+server:
+  port: 4000
+
+app:
+  cors:
+    allowed-origins: "http://localhost:4200"
+  frontend:
+    base-url: ${APP_FRONTEND_BASE_URL:http://localhost:4200}
+  ml:
+    scoring-service-url: ${APP_ML_SCORING_SERVICE_URL:http://localhost:5001}

@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ApiService } from '../../services/api.service';
 import { LeadService } from '../../services/lead.service';
+import { ToastService } from '../../services/toast.service';
 
 @Component({
   selector: 'app-ranking-config',
@@ -12,6 +13,7 @@ import { LeadService } from '../../services/lead.service';
 export class RankingConfigPage implements OnInit {
   private readonly apiService = inject(ApiService);
   private readonly leadService = inject(LeadService);
+  private readonly toast = inject(ToastService);
   private readonly platformId = inject(PLATFORM_ID);
 
   mlServiceAvailable = signal(false);
@@ -44,6 +46,7 @@ export class RankingConfigPage implements OnInit {
         this.mlServiceAvailable.set(false);
         this.scoringMethod.set('Unavailable');
         this.isCheckingStatus.set(false);
+        this.toast.error('ML service status check failed. Scoring will use heuristic fallback.');
       },
     });
   }
@@ -63,7 +66,9 @@ export class RankingConfigPage implements OnInit {
       error: (err) => {
         this.isScoring.set(false);
         this.showScoringModal.set(false);
-        this.scoringError.set(err?.message || 'Scoring failed');
+        const msg = err?.message || 'Scoring failed';
+        this.scoringError.set(msg);
+        this.toast.error(msg);
       },
     });
   }

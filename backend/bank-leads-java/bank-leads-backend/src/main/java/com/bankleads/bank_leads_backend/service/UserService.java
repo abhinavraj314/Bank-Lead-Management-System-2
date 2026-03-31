@@ -7,6 +7,7 @@ import com.bankleads.bank_leads_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public UserResponse createUser(CreateUserRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -26,8 +28,10 @@ public class UserService {
         User user = User.builder()
                 .username(request.getUsername().trim())
                 .email(normalizedEmail)
-                .password(request.getPassword())
+                // Hash password before saving
+                .password(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
+                .accountStatus(User.AccountStatus.ACTIVE)
                 .build();
         User saved = userRepository.save(user);
         return toResponse(saved);
@@ -44,14 +48,29 @@ public class UserService {
     }
 
     public UserResponse getUserByUsername(String username) {
-        return userRepository.findByUsername(username)
-                .map(this::toResponse)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
+        User user = findUserEntityByUsername(username);
+        if (user.getAccountStatus() != User.AccountStatus.ACTIVE) {
+            throw new IllegalArgumentException("User not found: " + username);
+        }
+        return toResponse(user);
     }
 
     public UserResponse getUserByEmail(String email) {
+        User user = findUserEntityByEmail(email);
+        if (user.getAccountStatus() != User.AccountStatus.ACTIVE) {
+            throw new IllegalArgumentException("User not found: " + email);
+        }
+        return toResponse(user);
+    }
+
+    // Expose entity-level finders for login logic
+    public User findUserEntityByUsername(String username) {
+        return userRepository.findByUsername(username.trim())
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
+    }
+
+    public User findUserEntityByEmail(String email) {
         return userRepository.findByEmail(email.trim().toLowerCase())
-                .map(this::toResponse)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + email));
     }
 
@@ -79,12 +98,17 @@ public class UserService {
         userRepository.deleteById(id);
     }
 
+    public UserResponse toResponsePublic(User user) {
+        return toResponse(user);
+    }
+
     private UserResponse toResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .role(user.getRole())
+                .accountStatus(user.getAccountStatus())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();

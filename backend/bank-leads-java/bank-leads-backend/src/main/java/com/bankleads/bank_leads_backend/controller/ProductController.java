@@ -20,6 +20,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/products")
@@ -62,13 +64,22 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Product>> createProduct(@Valid @RequestBody CreateProductRequest request) {
-        if (productRepository.existsByPId(request.getPId().toUpperCase())) {
-            return ResponseUtil.error("Product with p_id '" + request.getPId() + "' already exists",
-                    HttpStatus.CONFLICT);
+        String providedPId = request.getPId();
+        String pId = (providedPId == null || providedPId.trim().isEmpty())
+                ? generateUniqueProductId()
+                : providedPId.trim().toUpperCase();
+
+        if (productRepository.existsByPId(pId)) {
+            // If pId was provided explicitly, report conflict; otherwise regenerate once.
+            if (providedPId != null && !providedPId.trim().isEmpty()) {
+                return ResponseUtil.error("Product with p_id '" + pId + "' already exists",
+                        HttpStatus.CONFLICT);
+            }
+            pId = generateUniqueProductId();
         }
-        
+
         Product product = Product.builder()
-                .pId(request.getPId().toUpperCase())
+                .pId(pId)
                 .pName(request.getPName())
                 .deduplicationFields(request.getDeduplicationFields() != null ? request.getDeduplicationFields() : new java.util.ArrayList<>())
                 .createdAt(LocalDateTime.now())
@@ -78,6 +89,36 @@ public class ProductController {
         Product saved = productRepository.save(product);
         return ResponseUtil.success(saved, "Product created successfully",
                 HttpStatus.CREATED);
+    }
+
+    private String generateUniqueProductId() {
+        // Auto-generate sequential IDs like LOAN004, LOAN005, ...
+        // We look for existing product IDs that match LOAN + 3 digits.
+        final String prefix = "LOAN";
+        final Pattern pattern = Pattern.compile("^" + prefix + "(\\d{3})$", Pattern.CASE_INSENSITIVE);
+
+        int maxNumeric = 0;
+        List<Product> allProducts = productRepository.findAll();
+        for (Product p : allProducts) {
+            if (p == null || p.getPId() == null) continue;
+            String pId = p.getPId().toUpperCase();
+            Matcher matcher = pattern.matcher(pId);
+            if (matcher.matches()) {
+                int num = Integer.parseInt(matcher.group(1));
+                maxNumeric = Math.max(maxNumeric, num);
+            }
+        }
+
+        // Start from max+1 and increment until we find an unused one.
+        for (int i = 1; i <= 100; i++) {
+            int candidateNum = maxNumeric + i;
+            String candidate = prefix + String.format("%03d", candidateNum);
+            if (!productRepository.existsByPId(candidate)) {
+                return candidate;
+            }
+        }
+
+        throw new IllegalStateException("Could not generate a unique sequential product id");
     }
     
     @GetMapping

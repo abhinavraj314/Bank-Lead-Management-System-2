@@ -13,7 +13,6 @@
           <th>Source Name</th>
           <th>Product</th>
           <th>Columns</th>
-          <th>Status</th>
           <th *ngIf="isAdmin()">Actions</th>
         </tr>
       </thead>
@@ -29,15 +28,6 @@
               }
             </div>
           </td>
-          <td>
-            <span
-              class="badge"
-              [class.badge-active]="source.status === 'active'"
-              [class.badge-inactive]="source.status === 'inactive'"
-            >
-              {{ source.status }}
-            </span>
-          </td>
           <td *ngIf="isAdmin()" class="actions-cell">
             <button
               class="btn btn-danger btn-sm"
@@ -50,7 +40,7 @@
         </tr>
         @if (sources().length === 0) {
           <tr>
-            <td colspan="5" class="empty-state">No sources found.</td>
+            <td [attr.colspan]="isAdmin() ? 4 : 3" class="empty-state">No sources found.</td>
           </tr>
         }
       </tbody>

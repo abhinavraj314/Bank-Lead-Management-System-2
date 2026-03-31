@@ -3,6 +3,7 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CanonicalFieldService } from '../../services/canonical-field.service';
 import { ApiService } from '../../services/api.service';
+import { ToastService } from '../../services/toast.service';
 import { CanonicalField } from '../../models/lead.models';
 
 @Component({
@@ -14,6 +15,7 @@ import { CanonicalField } from '../../models/lead.models';
 export class CanonicalFieldsPage implements OnInit {
   private readonly canonicalFieldService = inject(CanonicalFieldService);
   private readonly apiService = inject(ApiService);
+  private readonly toast = inject(ToastService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly fields = signal<CanonicalField[]>([]);
@@ -26,8 +28,6 @@ export class CanonicalFieldsPage implements OnInit {
     field_name: '',
     display_name: '',
     type: 'String',
-    version: 1,
-    status: 'Active',
   };
 
   ngOnInit(): void {
@@ -41,8 +41,14 @@ export class CanonicalFieldsPage implements OnInit {
   }
 
   loadFields(): void {
-    this.canonicalFieldService.getCanonicalFields().subscribe((fields) => {
-      this.fields.set(fields);
+    this.canonicalFieldService.getCanonicalFields().subscribe({
+      next: (fields) => {
+        this.fields.set(fields);
+      },
+      error: (error) => {
+        const msg = error?.message || 'Failed to load canonical fields';
+        this.toast.error(msg);
+      },
     });
   }
 
@@ -59,8 +65,6 @@ export class CanonicalFieldsPage implements OnInit {
       field_name: '',
       display_name: '',
       type: 'String',
-      version: 1,
-      status: 'Active',
     };
   }
 
@@ -68,14 +72,17 @@ export class CanonicalFieldsPage implements OnInit {
     // Validation
     if (!this.newField.field_name?.trim()) {
       this.errorMessage.set('Field Name is required');
+      this.toast.error('Field Name is required');
       return;
     }
     if (!this.newField.display_name?.trim()) {
       this.errorMessage.set('Display Name is required');
+      this.toast.error('Display Name is required');
       return;
     }
     if (!this.newField.type) {
       this.errorMessage.set('Type is required');
+      this.toast.error('Type is required');
       return;
     }
 
@@ -85,6 +92,7 @@ export class CanonicalFieldsPage implements OnInit {
     );
     if (existingField) {
       this.errorMessage.set(`Field '${this.newField.field_name}' already exists`);
+      this.toast.error(`Field '${this.newField.field_name}' already exists`);
       return;
     }
 
@@ -92,6 +100,7 @@ export class CanonicalFieldsPage implements OnInit {
     const allowedTypes: string[] = ['String', 'Number', 'Date', 'Boolean'];
     if (!allowedTypes.includes(this.newField.type)) {
       this.errorMessage.set('Type must be String, Number, Date, or Boolean');
+      this.toast.error('Type must be String, Number, Date, or Boolean');
       return;
     }
 
@@ -103,7 +112,9 @@ export class CanonicalFieldsPage implements OnInit {
         field_name: this.newField.field_name.trim(),
         display_name: this.newField.display_name.trim(),
         field_type: this.newField.type as 'String' | 'Number' | 'Date' | 'Boolean',
-        is_active: this.newField.status === 'Active',
+        // Status is fixed for new canonical fields (no status picker in UI).
+        // If you need inactive fields later, we can add that back explicitly.
+        is_active: true,
         version: 'v1',
       })
       .subscribe({
@@ -113,7 +124,9 @@ export class CanonicalFieldsPage implements OnInit {
         },
         error: (error) => {
           this.isCreating.set(false);
-          this.errorMessage.set(error.message || 'Failed to create canonical field');
+          const msg = error.message || 'Failed to create canonical field';
+          this.errorMessage.set(msg);
+          this.toast.error(msg);
         },
       });
   }

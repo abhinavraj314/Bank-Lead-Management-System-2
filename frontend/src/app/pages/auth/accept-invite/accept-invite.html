@@ -1,0 +1,38 @@
+<div class="auth-container">
+  <div class="auth-card">
+    <h1>Accept Invitation</h1>
+
+    <div *ngIf="!token" class="alert alert-error">Invalid invitation link.</div>
+
+    <form (ngSubmit)="accept()">
+      <div class="input-group">
+        <label>Username</label>
+        <input
+          type="text"
+          [(ngModel)]="form.username"
+          name="username"
+          placeholder="Choose a username"
+          required
+          [disabled]="loading"
+        />
+      </div>
+
+      <div class="input-group">
+        <label>Password</label>
+        <input
+          type="password"
+          [(ngModel)]="form.password"
+          name="password"
+          placeholder="Create a password"
+          required
+          [disabled]="loading"
+        />
+      </div>
+
+      <button type="submit" [disabled]="loading || !token" class="btn btn-primary">
+        {{ loading ? 'Accepting...' : 'Accept Invitation' }}
+      </button>
+    </form>
+  </div>
+</div>
+

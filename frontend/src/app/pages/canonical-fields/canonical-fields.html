@@ -13,8 +13,6 @@
           <th>Field Name</th>
           <th>Display Name</th>
           <th>Type</th>
-          <th>Version</th>
-          <th>Status</th>
         </tr>
       </thead>
       <tbody>
@@ -24,20 +22,10 @@
           <td>
             <span class="badge badge-type">{{ field.type }}</span>
           </td>
-          <td>{{ field.version }}</td>
-          <td>
-            <span
-              class="badge"
-              [class.badge-active]="field.status === 'Active'"
-              [class.badge-inactive]="field.status === 'Inactive'"
-            >
-              {{ field.status }}
-            </span>
-          </td>
         </tr>
         @if (fields().length === 0) {
           <tr>
-            <td colspan="5" class="empty-state">No canonical fields found.</td>
+                <td colspan="3" class="empty-state">No canonical fields found.</td>
           </tr>
         }
       </tbody>
@@ -92,13 +80,6 @@
               <option value="Number">Number</option>
               <option value="Date">Date</option>
               <option value="Boolean">Boolean</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Status</label>
-            <select [(ngModel)]="newField.status" [disabled]="isCreating()">
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
             </select>
           </div>
         </div>

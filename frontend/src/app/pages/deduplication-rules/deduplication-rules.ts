@@ -5,6 +5,7 @@ import { CanonicalFieldService } from '../../services/canonical-field.service';
 import { DeduplicationRulesService } from '../../services/deduplication-rules.service';
 import { ProductService } from '../../services/product.service';
 import { ApiService } from '../../services/api.service';
+import { ToastService } from '../../services/toast.service';
 import { CanonicalField, Product } from '../../models/lead.models';
 
 @Component({
@@ -18,6 +19,7 @@ export class DeduplicationRulesPage implements OnInit {
   private readonly deduplicationRulesService = inject(DeduplicationRulesService);
   private readonly productService = inject(ProductService);
   private readonly apiService = inject(ApiService);
+  private readonly toast = inject(ToastService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly products = signal<Product[]>([]);
@@ -41,14 +43,26 @@ export class DeduplicationRulesPage implements OnInit {
   }
 
   loadProducts(): void {
-    this.productService.getProducts().subscribe((products) => {
-      this.products.set(products);
+    this.productService.getProducts().subscribe({
+      next: (products) => {
+        this.products.set(products);
+      },
+      error: (error) => {
+        const msg = error?.message || 'Failed to load products';
+        this.toast.error(msg);
+      },
     });
   }
 
   loadFields(): void {
-    this.canonicalFieldService.getCanonicalFields().subscribe((fields) => {
-      this.fields.set(fields);
+    this.canonicalFieldService.getCanonicalFields().subscribe({
+      next: (fields) => {
+        this.fields.set(fields);
+      },
+      error: (error) => {
+        const msg = error?.message || 'Failed to load canonical fields';
+        this.toast.error(msg);
+      },
     });
   }
 
@@ -98,12 +112,14 @@ export class DeduplicationRulesPage implements OnInit {
     // Validation: Product must be selected
     if (!this.selectedProduct()) {
       this.errorMessage.set('Please select a product first');
+      this.toast.error('Please select a product first');
       return;
     }
 
     // Validation: At least one canonical field must be selected
     if (this.selectedFields().length === 0) {
       this.errorMessage.set('Please select at least one canonical field');
+      this.toast.error('Please select at least one canonical field');
       return;
     }
 
@@ -125,7 +141,9 @@ export class DeduplicationRulesPage implements OnInit {
         },
         error: (error) => {
           this.isSaving.set(false);
-          this.errorMessage.set(error.message || 'Failed to save deduplication rules');
+          const msg = error.message || 'Failed to save deduplication rules';
+          this.errorMessage.set(msg);
+          this.toast.error(msg);
         },
       });
   }
@@ -140,6 +158,7 @@ export class DeduplicationRulesPage implements OnInit {
     const pId = this.selectedProduct();
     if (!pId) {
       this.errorMessage.set('Please select a product first');
+      this.toast.error('Please select a product first');
       return;
     }
     this.errorMessage.set('');
@@ -154,7 +173,9 @@ export class DeduplicationRulesPage implements OnInit {
       },
       error: (err) => {
         this.isExecuting.set(false);
-        this.errorMessage.set(err?.message || 'Deduplication failed');
+        const msg = err?.message || 'Deduplication failed';
+        this.errorMessage.set(msg);
+        this.toast.error(msg);
       },
     });
   }
@@ -177,7 +198,9 @@ export class DeduplicationRulesPage implements OnInit {
       },
       error: (err) => {
         this.isExecuting.set(false);
-        this.errorMessage.set(err?.message || 'Deduplication failed');
+        const msg = err?.message || 'Deduplication failed';
+        this.errorMessage.set(msg);
+        this.toast.error(msg);
       },
     });
   }

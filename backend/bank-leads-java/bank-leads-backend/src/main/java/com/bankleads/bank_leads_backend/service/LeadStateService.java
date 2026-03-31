@@ -50,7 +50,10 @@ public class LeadStateService {
      * @throws IllegalArgumentException if transition is invalid
      */
     public void updateStatus(Lead lead, Lead.LeadStatus newStatus, boolean isAdmin) {
-        Lead.LeadStatus currentStatus = lead.getStatus() != null ? lead.getStatus() : Lead.LeadStatus.NEW;
+        // Prefer the primary field `state` when present; fall back to `status` for older documents.
+        Lead.LeadStatus currentStatus =
+                lead.getState() != null ? lead.getState()
+                        : (lead.getStatus() != null ? lead.getStatus() : Lead.LeadStatus.NEW);
         
         if (!isValidTransition(currentStatus, newStatus, isAdmin)) {
             throw new IllegalArgumentException(
@@ -58,7 +61,18 @@ public class LeadStateService {
             );
         }
         
-        lead.setStatus(newStatus);
+        // Update the correct Mongo field:
+        // - If `state` exists, update `state` (avoid creating/updating a separate `status` field).
+        // - If `state` is absent, update `status` for backward compatibility.
+        if (lead.getState() != null) {
+            lead.setState(newStatus);
+            // Keep aliases in sync only if `status` already exists in the document.
+            if (lead.getStatus() != null) {
+                lead.setStatus(newStatus);
+            }
+        } else {
+            lead.setStatus(newStatus);
+        }
         lead.setStatusUpdatedAt(LocalDateTime.now());
     }
     

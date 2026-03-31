@@ -32,6 +32,9 @@ export class ProductService {
           product_id: backendProduct.pId,
           product_name: backendProduct.pName,
           deduplication_fields: backendProduct.deduplicationFields || [],
+          created_date: backendProduct.createdAt
+            ? new Date(backendProduct.createdAt).toISOString().split('T')[0]
+            : undefined,
         }));
       }),
       catchError((error) => {
@@ -44,11 +47,10 @@ export class ProductService {
 
   /**
    * Create a new product
-   * Requires p_id and p_name
+   * Backend auto-generates p_id if omitted.
    */
-  createProduct(pId: string, pName: string): Observable<Product> {
+  createProduct(pName: string): Observable<Product> {
     const requestBody = {
-      p_id: pId.toUpperCase(),
       p_name: pName,
     };
 
@@ -65,6 +67,9 @@ export class ProductService {
           product_id: backendProduct.pId,
           product_name: backendProduct.pName,
           deduplication_fields: backendProduct.deduplicationFields || [],
+          created_date: backendProduct.createdAt
+            ? new Date(backendProduct.createdAt).toISOString().split('T')[0]
+            : undefined,
         };
       }),
       catchError((error) => {

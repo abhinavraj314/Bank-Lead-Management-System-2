@@ -17,6 +17,7 @@ public class UserResponse {
     private String username;
     private String email;
     private User.Role role;
+    private User.AccountStatus accountStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

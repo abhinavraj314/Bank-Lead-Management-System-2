@@ -64,9 +64,7 @@ export class ApiService {
 
   // ==================== USER ENDPOINTS ====================
 
-  /**
-   * Create a new user (Sign up)
-   */
+  // Admin/user creation is handled from the Users page; public sign-up is disabled.
   createUser(request: any): Observable<any> {
     return this.post('/users', request);
   }
@@ -91,14 +89,14 @@ export class ApiService {
   }
 
   /**
-   * Get user by username (for login)
+   * Get user by username (used by admin screens; NOT for passwordless login)
    */
   getUserByUsername(username: string): Observable<any> {
     return this.get(`/users/username/${username}`);
   }
 
   /**
-   * Get user by email (for login)
+   * Get user by email (used by admin screens; NOT for passwordless login)
    */
   getUserByEmail(email: string): Observable<any> {
     return this.get(`/users/email/${email}`);
@@ -116,6 +114,30 @@ export class ApiService {
    */
   deleteUser(id: string): Observable<any> {
     return this.delete(`/users/${id}`);
+  }
+
+  // ==================== INVITATIONS ====================
+
+  /**
+   * Admin invites a user by email.
+   * Backend returns the raw token (frontend builds the accept link).
+   */
+  inviteUserByEmail(request: { email: string; role: 'USER' | 'ADMIN' }): Observable<any> {
+    return this.post('/users/invitations', request);
+  }
+
+  /**
+   * Public: accept an invitation using the token.
+   */
+  acceptUserInvitation(request: { token: string; username: string; password: string }): Observable<any> {
+    return this.post('/users/invitations/accept', request);
+  }
+
+  /**
+   * Login with username/email + password.
+   */
+  login(credentials: { identifier: string; password: string }): Observable<any> {
+    return this.post('/users/login', credentials);
   }
 
   // ==================== AUTHENTICATION HELPERS ====================

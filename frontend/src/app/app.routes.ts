@@ -8,10 +8,13 @@ import { SourcesPage } from './pages/sources/sources';
 import { DeduplicationRulesPage } from './pages/deduplication-rules/deduplication-rules';
 import { RankingConfigPage } from './pages/ranking-config/ranking-config';
 import { Leads } from './pages/leads/leads';
+import { UsersPage } from './pages/users/users';
 import { AuthGuard } from './services/auth.guard';
+import { AcceptInviteComponent } from './pages/auth/accept-invite/accept-invite';
 
 export const routes: Routes = [
   { path: 'auth', component: AuthComponent },
+  { path: 'auth/accept-invite', component: AcceptInviteComponent },
   {
     path: 'admin',
     component: AdminLayout,
@@ -24,6 +27,7 @@ export const routes: Routes = [
       { path: 'sources', component: SourcesPage },
       { path: 'deduplication-rules', component: DeduplicationRulesPage },
       { path: 'ranking-config', component: RankingConfigPage },
+      { path: 'users', component: UsersPage, data: { adminOnly: true } },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },

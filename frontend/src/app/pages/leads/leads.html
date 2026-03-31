@@ -50,9 +50,10 @@
             class="form-select"
             [ngModel]="selectedSource()"
             (ngModelChange)="selectedSource.set($event)"
+            [disabled]="!selectedProduct()"
           >
             <option value="">Select Source</option>
-            @for (source of sources(); track source.source_id) {
+            @for (source of sourcesForSelectedProduct(); track source.source_id) {
               <option [value]="source.source_id">
                 {{ source.source_name }}
               </option>
@@ -155,61 +156,13 @@
         </div>
 
         <div class="filter-group">
-          <select
-            class="filter-select"
-            [ngModel]="selectedProductFilter()"
-            (ngModelChange)="selectedProductFilter.set($event); onFilterOrSearchChange()"
-          >
-            <option value="">All Products</option>
-            @for (product of products(); track product.product_id) {
-              <option [value]="product.product_id">
-                {{ product.product_name }}
-              </option>
+          <button class="btn btn-secondary filter-btn" type="button" (click)="openFilterModal()">
+            Filters
+            @if (activeFilterCount() > 0) {
+              <span class="filter-count">{{ activeFilterCount() }}</span>
             }
-          </select>
-
-          <select
-            class="filter-select"
-            [ngModel]="selectedSourceFilter()"
-            (ngModelChange)="selectedSourceFilter.set($event); onFilterOrSearchChange()"
-          >
-            <option value="">All Sources</option>
-            @for (source of sources(); track source.source_id) {
-              <option [value]="source.source_id">
-                {{ source.source_name }}
-              </option>
-            }
-          </select>
-
-          <select
-            class="filter-select"
-            [ngModel]="selectedStatusFilter()"
-            (ngModelChange)="selectedStatusFilter.set($event); onFilterOrSearchChange()"
-          >
-            <option value="">All Statuses</option>
-            <option value="NEW">New</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="QUALIFIED">Qualified</option>
-            <option value="CLOSED">Closed</option>
-          </select>
-
-          @if (isAdmin()) {
-            <select
-              class="filter-select"
-              [ngModel]="selectedAssignedUserFilter()"
-              (ngModelChange)="selectedAssignedUserFilter.set($event); onFilterOrSearchChange()"
-            >
-              <option value="">All Assignments</option>
-              <option value="unassigned">Unassigned</option>
-              @for (user of users(); track user.id) {
-                <option [value]="user.id">
-                  {{ user.username || user.email }}
-                </option>
-              }
-            </select>
-          }
-
-          @if (selectedProductFilter() || selectedSourceFilter() || selectedStatusFilter() || selectedAssignedUserFilter() || searchQuery()) {
+          </button>
+          @if (activeFilterCount() > 0 || searchQuery()) {
             <button class="btn btn-secondary" type="button" (click)="clearFilters()">
               Clear Filters
             </button>
@@ -217,14 +170,93 @@
         </div>
       </div>
 
+      @if (showFilterModal()) {
+        <div class="modal-overlay" (click)="closeFilterModal()">
+          <div class="modal-content filter-modal" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h2>Filter Leads</h2>
+              <button class="btn-close" type="button" (click)="closeFilterModal()">×</button>
+            </div>
+
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">Product</label>
+                <select class="form-select" [ngModel]="draftProductFilter()" (ngModelChange)="draftProductFilter.set($event)">
+                  <option value="">All Products</option>
+                  @for (product of products(); track product.product_id) {
+                    <option [value]="product.product_id">{{ product.product_name }}</option>
+                  }
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Source</label>
+                <select class="form-select" [ngModel]="draftSourceFilter()" (ngModelChange)="draftSourceFilter.set($event)">
+                  <option value="">All Sources</option>
+                  @for (source of sources(); track source.source_id) {
+                    <option [value]="source.source_id">{{ source.source_name }}</option>
+                  }
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">State</label>
+                <select class="form-select" [ngModel]="draftStatusFilter()" (ngModelChange)="draftStatusFilter.set($event)">
+                  <option value="">All States</option>
+                  <option value="NEW">New</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="QUALIFIED">Qualified</option>
+                  <option value="CLOSED">Closed</option>
+                </select>
+              </div>
+
+              @if (isAdmin()) {
+                <div class="form-group">
+                  <label class="form-label">Assignment</label>
+                  <select class="form-select" [ngModel]="draftAssignedUserFilter()" (ngModelChange)="draftAssignedUserFilter.set($event)">
+                    <option value="">All Assignments</option>
+                    <option value="unassigned">Unassigned</option>
+                    @for (user of users(); track user.id) {
+                      <option [value]="user.id">{{ user.username || user.email }}</option>
+                    }
+                  </select>
+                </div>
+              }
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-secondary" type="button" (click)="clearModalFilters()">
+                Clear
+              </button>
+              <button class="btn btn-secondary" type="button" (click)="closeFilterModal()">
+                Cancel
+              </button>
+              <button class="btn btn-primary" type="button" (click)="applyFiltersFromModal()">
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
       <div class="sort-controls">
+        <div class="list-controls">
+          <button
+            class="btn"
+            [ngClass]="sortBy() === 'lead_score' ? 'btn-primary' : 'btn-secondary'"
+            type="button"
+            (click)="toggleSortByScore()"
+          >
+            {{ sortBy() === 'lead_score' ? 'Ranked by Score' : 'Rank by Score' }}
+          </button>
+        </div>
         <button
-          class="btn"
-          [ngClass]="sortBy() === 'lead_score' ? 'btn-primary' : 'btn-secondary'"
+          class="btn btn-ghost"
           type="button"
-          (click)="toggleSortByScore()"
+          (click)="showClosedLeads.set(!showClosedLeads())"
+          [attr.aria-pressed]="showClosedLeads()"
         >
-          {{ sortBy() === 'lead_score' ? '🏆 Ranked by Score' : '📊 Rank by Score' }}
+          {{ showClosedLeads() ? 'Hide Closed Leads' : 'Show Closed Leads' }}
         </button>
       </div>
 
@@ -237,7 +269,7 @@
               <th>Phone</th>
               <th>Product</th>
               <th>Source</th>
-              <th>Status</th>
+              <th>State</th>
               <th>Assigned To</th>
               <th class="score-header" (click)="toggleSortByScore()">
                 Score
@@ -261,7 +293,7 @@
                   <select
                     class="status-select"
                     [ngModel]="lead.status || 'NEW'"
-                    [disabled]="updatingLeadId() === lead.lead_id"
+                    [disabled]="updatingLeadId() === lead.lead_id || lead.status === 'CLOSED'"
                     (ngModelChange)="updateLeadStatus(lead.lead_id, $event)"
                   >
                     @for (opt of getStatusOptions(); track opt.value) {

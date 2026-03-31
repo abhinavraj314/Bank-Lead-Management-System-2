@@ -54,6 +54,14 @@ export class Leads {
   sources = signal<Source[]>([]);
   allLeads = signal<Lead[]>([]);
 
+  // Sources dropdown for lead upload should only show sources
+  // that belong to the currently selected product.
+  sourcesForSelectedProduct = computed(() => {
+    const pId = this.selectedProduct();
+    if (!pId) return [];
+    return this.sources().filter((s) => s.product_id === pId);
+  });
+
   // Pagination (server-side: one page fetched at a time)
   currentPage = signal(1);
   pageSize = signal(25);
@@ -67,6 +75,14 @@ export class Leads {
   selectedSourceFilter = signal('');
   selectedStatusFilter = signal<string>('');
   selectedAssignedUserFilter = signal<string>('');
+  showClosedLeads = signal(true);
+  showFilterModal = signal(false);
+
+  // Draft filter values used inside filter modal
+  draftProductFilter = signal('');
+  draftSourceFilter = signal('');
+  draftStatusFilter = signal<string>('');
+  draftAssignedUserFilter = signal<string>('');
 
   // Users list for assignment dropdown (admin only)
   users = signal<Array<{ id: string; username: string; email: string }>>([]);
@@ -87,14 +103,35 @@ export class Leads {
     return all;
   });
 
-  // Current page rows to show (server-side pagination: allLeads is already one page)
-  paginatedLeads = computed(() => this.sortedLeads());
+  // Current page rows to show (client-side pagination over full result set)
+  paginatedLeads = computed(() => {
+    const leads = this.sortedLeads();
+    const filtered = this.showClosedLeads()
+      ? leads
+      : leads.filter((l) => l.status !== 'CLOSED');
+
+    const page = this.currentPage();
+    const size = this.pageSize();
+    const start = (page - 1) * size;
+    const end = start + size;
+
+    return filtered.slice(start, end);
+  });
 
   totalPages = computed(() =>
     Math.max(1, Math.ceil(this.totalLeads() / this.pageSize())),
   );
 
   filteredTotal = computed(() => this.totalLeads());
+
+  activeFilterCount = computed(() => {
+    let count = 0;
+    if (this.selectedProductFilter()) count++;
+    if (this.selectedSourceFilter()) count++;
+    if (this.selectedStatusFilter()) count++;
+    if (this.selectedAssignedUserFilter()) count++;
+    return count;
+  });
 
   /** First 4 page numbers for compact pagination; rest via "Go to page" */
   visiblePageNumbers = computed(() => {
@@ -113,6 +150,20 @@ export class Leads {
       this.loadLeads();
     }
   }
+
+  // Keep selectedSource valid when user switches the selected product.
+  // If the current selectedSource doesn't belong to the product, clear it.
+  constructorGuard = effect(() => {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const pId = this.selectedProduct();
+    const sId = this.selectedSource();
+
+    if (!pId || !sId) return;
+
+    const isValid =
+      this.sources().some((s) => s.source_id === sId && s.product_id === pId);
+    if (!isValid) this.selectedSource.set('');
+  });
 
   isAdmin(): boolean {
     return this.apiService.isAdmin();
@@ -151,24 +202,26 @@ export class Leads {
     this.loadError.set(null);
     this.loadingLeads.set(true);
     this.allLeads.set([]);
-    const page = this.currentPage();
-    const limit = this.pageSize();
     const p_id = this.selectedProductFilter() || undefined;
     const source_id = this.selectedSourceFilter() || undefined;
     const q = this.searchQuery().trim() || undefined;
     const status = this.selectedStatusFilter() || undefined;
     const assigned_user_id = this.selectedAssignedUserFilter() || undefined;
     const assigned_to_me = !this.isAdmin() ? true : undefined; // Sales users see only their leads by default
-    this.leadService.getLeads({ page, limit, p_id, source_id, q, status, assigned_user_id, assigned_to_me }).subscribe({
+    // Fetch all matching leads and paginate client-side so ranking applies across pages.
+    this.leadService
+      .getLeads({ p_id, source_id, q, status, assigned_user_id, assigned_to_me })
+      .subscribe({
       next: (result) => {
         this.allLeads.set(result.leads);
-        this.totalLeads.set(result.total);
+        this.totalLeads.set(result.leads.length);
         this.loadingLeads.set(false);
       },
       error: (err) => {
         this.allLeads.set([]);
         this.totalLeads.set(0);
         this.loadError.set(err?.message || 'Failed to load leads');
+        this.toast.error(err?.message || 'Failed to load leads');
         this.loadingLeads.set(false);
       },
     });
@@ -212,6 +265,9 @@ export class Leads {
                 rowNumber: row.rowNumber,
                 reason: row.reason,
               })),
+            );
+            this.toast.error(
+              `Upload finished but ${response.failedCount} row(s) failed validation. Check the validation table below.`,
             );
             this.uploadMessage.set(
               `Upload completed with ${response.insertedCount} inserted, ${response.mergedCount} merged, and ${response.failedCount} failed rows`,
@@ -262,8 +318,12 @@ export class Leads {
             this.uploadError.set(
               errorResponse.error.message || errorResponse.message || 'Upload validation failed',
             );
+            this.toast.error(
+              errorResponse.error.message || errorResponse.message || 'Upload validation failed',
+            );
           } else {
             this.uploadError.set(errorResponse?.message || error?.message || 'Upload failed');
+            this.toast.error(errorResponse?.message || error?.message || 'Upload failed');
           }
         },
       });
@@ -303,6 +363,34 @@ export class Leads {
     this.selectedAssignedUserFilter.set('');
     this.currentPage.set(1);
     this.loadLeads();
+  }
+
+  openFilterModal() {
+    this.draftProductFilter.set(this.selectedProductFilter());
+    this.draftSourceFilter.set(this.selectedSourceFilter());
+    this.draftStatusFilter.set(this.selectedStatusFilter());
+    this.draftAssignedUserFilter.set(this.selectedAssignedUserFilter());
+    this.showFilterModal.set(true);
+  }
+
+  closeFilterModal() {
+    this.showFilterModal.set(false);
+  }
+
+  clearModalFilters() {
+    this.draftProductFilter.set('');
+    this.draftSourceFilter.set('');
+    this.draftStatusFilter.set('');
+    this.draftAssignedUserFilter.set('');
+  }
+
+  applyFiltersFromModal() {
+    this.selectedProductFilter.set(this.draftProductFilter());
+    this.selectedSourceFilter.set(this.draftSourceFilter());
+    this.selectedStatusFilter.set(this.draftStatusFilter());
+    this.selectedAssignedUserFilter.set(this.draftAssignedUserFilter());
+    this.showFilterModal.set(false);
+    this.onFilterOrSearchChange();
   }
 
   // Status and assignment update methods

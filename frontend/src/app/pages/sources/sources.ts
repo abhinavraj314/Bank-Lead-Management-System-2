@@ -47,19 +47,31 @@ export class SourcesPage implements OnInit {
   }
 
   loadSources(): void {
-    this.sourceService.getSources().subscribe((sources) => {
-      // Add mock status
-      const sourcesWithStatus: Source[] = sources.map((s) => ({
-        ...s,
-        status: 'active',
-      }));
-      this.sources.set(sourcesWithStatus);
+    this.sourceService.getSources().subscribe({
+      next: (sources) => {
+        // Add mock status
+        const sourcesWithStatus: Source[] = sources.map((s) => ({
+          ...s,
+          status: 'active',
+        }));
+        this.sources.set(sourcesWithStatus);
+      },
+      error: (error) => {
+        const msg = error?.message || 'Failed to load sources';
+        this.toast.error(msg);
+      },
     });
   }
 
   loadProducts(): void {
-    this.productService.getProducts().subscribe((products) => {
-      this.products.set(products);
+    this.productService.getProducts().subscribe({
+      next: (products) => {
+        this.products.set(products);
+      },
+      error: (error) => {
+        const msg = error?.message || 'Failed to load products';
+        this.toast.error(msg);
+      },
     });
   }
 
@@ -94,10 +106,12 @@ export class SourcesPage implements OnInit {
       // Validate step 1
       if (!this.newSource.source_name.trim()) {
         this.errorMessage.set('Source Name is required');
+        this.toast.error('Source Name is required');
         return;
       }
       if (!this.newSource.product_id) {
         this.errorMessage.set('Product is required');
+        this.toast.error('Product is required');
         return;
       }
       this.errorMessage.set('');
@@ -123,6 +137,7 @@ export class SourcesPage implements OnInit {
     const validColumns = this.newSource.columns.filter((c) => c.trim() !== '');
     if (validColumns.length === 0) {
       this.errorMessage.set('At least one column is required');
+      this.toast.error('At least one column is required');
       return;
     }
 
@@ -146,7 +161,9 @@ export class SourcesPage implements OnInit {
         },
         error: (error) => {
           this.isCreating.set(false);
-          this.errorMessage.set(error.message || 'Failed to create source');
+          const msg = error.message || 'Failed to create source';
+          this.errorMessage.set(msg);
+          this.toast.error(msg);
         },
       });
   }
