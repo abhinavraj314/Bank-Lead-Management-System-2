@@ -16,6 +16,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -25,7 +26,10 @@ import java.util.UUID;
 @Document(collection = "leads")
 @CompoundIndex(name = "lead_identifiers_index", def = "{'email': 1, 'phoneNumber': 1, 'aadharNumber': 1}")
 @CompoundIndex(name = "lead_dashboard_index", def = "{'pId': 1, 'sourceId': 1, 'createdAt': -1}")
-@CompoundIndex(name = "lead_assignment_index", def = "{'assignedUserId': 1, 'status': 1, 'createdAt': -1}")
+@CompoundIndex(name = "lead_assignment_index", def = "{'assignedUserId': 1, 'state': 1, 'createdAt': -1}")
+@CompoundIndex(name = "lead_list_product_state", def = "{'pId': 1, 'state': 1, 'createdAt': -1}")
+@CompoundIndex(name = "lead_created_desc", def = "{'createdAt': -1}")
+@CompoundIndex(name = "lead_score_sort", def = "{'leadScore': -1, 'createdAt': -1}")
 public class Lead {
     public enum EmploymentType {
         SALARIED,
@@ -34,9 +38,23 @@ public class Lead {
     }
     
     public enum LeadStatus {
+        /** Inbound / not yet routed to an owner */
         NEW,
+        /** Routed to a team or salesperson */
+        ASSIGNED,
+        /** First meaningful outreach completed */
+        CONTACTED,
+        /** Proposal or quote sent */
+        PROPOSAL_SENT,
+        /** @deprecated Prefer {@link #CONTACTED}; normalized in workflow */
         IN_PROGRESS,
+        /** @deprecated Prefer {@link #PROPOSAL_SENT}; normalized in workflow */
         QUALIFIED,
+        /** Won / successful close */
+        CONVERTED,
+        /** Lost / unsuccessful close */
+        NOT_CONVERTED,
+        /** @deprecated Legacy terminal state; treated as {@link #NOT_CONVERTED} in workflow */
         CLOSED
     }
     
@@ -102,6 +120,12 @@ public class Lead {
     private String assignedUserName;        // Denormalized for quick display (optional)
     private LocalDateTime statusUpdatedAt;   // When status last changed
     private LocalDateTime assignedAt;       // When assignment last changed
+
+    /** Team used for routing / ownership (optional) */
+    private String teamId;
+
+    /** Optional breakdown after ML + product ranking rules */
+    private Map<String, Object> scoreBreakdown;
     
     @LastModifiedDate
     private LocalDateTime updatedAt;

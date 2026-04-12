@@ -1,6 +1,12 @@
 import { Injectable } from '@angular/core';
 import { Observable, map, catchError, of } from 'rxjs';
-import { Product, BackendProduct, ApiResponse, Page } from '../models/lead.models';
+import {
+  Product,
+  BackendProduct,
+  ApiResponse,
+  Page,
+  ProductRankingProfile,
+} from '../models/lead.models';
 import { ApiService } from './api.service';
 
 @Injectable({
@@ -82,6 +88,31 @@ export class ProductService {
   /**
    * Delete a product by product_id
    */
+  getRankingProfile(productId: string): Observable<ProductRankingProfile> {
+    const id = productId.toUpperCase();
+    return this.apiService.get<ApiResponse<ProductRankingProfile>>(`/products/${id}/ranking-profile`).pipe(
+      map((response) => {
+        if (!response.success || !response.data) {
+          throw new Error(response.error?.message || response.message || 'Failed to load ranking profile');
+        }
+        return response.data;
+      }),
+    );
+  }
+
+  saveRankingProfile(productId: string, profile: ProductRankingProfile): Observable<ProductRankingProfile> {
+    const id = productId.toUpperCase();
+    const body = { ...profile, pId: id };
+    return this.apiService.put<ApiResponse<ProductRankingProfile>>(`/products/${id}/ranking-profile`, body).pipe(
+      map((response) => {
+        if (!response.success || !response.data) {
+          throw new Error(response.error?.message || response.message || 'Failed to save ranking profile');
+        }
+        return response.data;
+      }),
+    );
+  }
+
   deleteProduct(productId: string): Observable<void> {
     return this.apiService.delete<ApiResponse<void>>(`/products/${productId.toUpperCase()}`).pipe(
       map((response) => {

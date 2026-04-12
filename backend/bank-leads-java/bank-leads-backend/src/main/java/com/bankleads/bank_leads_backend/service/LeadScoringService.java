@@ -1,7 +1,10 @@
 package com.bankleads.bank_leads_backend.service;
 
 import com.bankleads.bank_leads_backend.model.Lead;
+import com.bankleads.bank_leads_backend.model.LeadEvent;
+import com.bankleads.bank_leads_backend.model.ProductRankingProfile;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
+import com.bankleads.bank_leads_backend.repository.ProductRankingProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +24,9 @@ public class LeadScoringService {
 
     private final LeadRepository leadRepository;
     private final RestTemplate restTemplate;
+    private final RankingAdjustmentService rankingAdjustmentService;
+    private final LeadAuditService leadAuditService;
+    private final ProductRankingProfileRepository productRankingProfileRepository;
 
     @Value("${app.ml.scoring-service-url:http://localhost:5001}")
     private String mlServiceUrl;
@@ -78,55 +84,103 @@ public class LeadScoringService {
 
         double probability = ((Number) predictions.get(0).get("probability")).doubleValue();
 
-        lead.setLeadScore(probability);
-        lead.setScoreReason("ML model prediction (LightGBM)");
+        RankingAdjustmentService.Result adj = rankingAdjustmentService.apply(lead, probability, "ML model prediction (LightGBM)");
+        lead.setLeadScore(adj.getFinalScore());
+        lead.setScoreReason(adj.getReason());
+        lead.setScoreBreakdown(adj.getBreakdown());
         leadRepository.save(lead);
+        leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.SCORE_UPDATED, null,
+                Map.of("baseScore", probability, "finalScore", adj.getFinalScore()));
 
-        return new ScoringResult(probability, "ML model prediction (LightGBM)", Map.of());
+        return new ScoringResult(adj.getFinalScore(), adj.getReason(), adj.getBreakdown());
     }
 
     private static final int BATCH_CHUNK_SIZE = 500;
 
     @SuppressWarnings("unchecked")
     private int batchScoreWithML(List<Lead> leads) {
+        log.info("Starting batch ML scoring for {} leads in chunks of {}", leads.size(), BATCH_CHUNK_SIZE);
         Map<String, Double> scoreMap = new HashMap<>();
+        
+        // Pre-fetch all unique ProductRankingProfiles to avoid repeated queries
+        List<String> uniquePIds = leads.stream()
+                .map(Lead::getPId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        log.debug("Found {} unique products, fetching ranking profiles...", uniquePIds.size());
+        
+        Map<String, ProductRankingProfile> profileCache = new HashMap<>();
+        for (String pId : uniquePIds) {
+            productRankingProfileRepository.findByPId(pId).ifPresent(p -> profileCache.put(pId, p));
+        }
+        log.debug("Cached {} product ranking profiles", profileCache.size());
+        
+        // Process in chunks
+        int chunkIndex = 0;
         for (int i = 0; i < leads.size(); i += BATCH_CHUNK_SIZE) {
             int end = Math.min(i + BATCH_CHUNK_SIZE, leads.size());
             List<Lead> chunk = leads.subList(i, end);
+            chunkIndex++;
+            log.debug("Processing chunk {}: leads {}-{} of {}", 
+                    chunkIndex, i, end - 1, leads.size());
+            
             List<Map<String, Object>> leadDataList = chunk.stream()
-                    .map(this::buildLeadDataMap)
+                    .map(lead -> buildLeadDataMapWithCache(lead, profileCache))
                     .collect(Collectors.toList());
+            log.debug("Prepared {} lead data maps, calling ML service...", leadDataList.size());
+            
             Map<String, Object> requestBody = Map.of("leads", leadDataList);
 
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    mlServiceUrl + "/predict", requestBody, Map.class);
+            try {
+                long startTime = System.currentTimeMillis();
+                ResponseEntity<Map> response = restTemplate.postForEntity(
+                        mlServiceUrl + "/predict", requestBody, Map.class);
+                long elapsedMs = System.currentTimeMillis() - startTime;
+                log.debug("ML service responded in {}ms", elapsedMs);
 
-            Map<String, Object> body = response.getBody();
-            if (body == null || !body.containsKey("predictions")) {
-                throw new RuntimeException("Invalid ML service response");
-            }
-
-            List<Map<String, Object>> predictions = (List<Map<String, Object>>) body.get("predictions");
-            for (Map<String, Object> pred : predictions) {
-                String leadId = (String) pred.get("leadId");
-                double prob = ((Number) pred.get("probability")).doubleValue();
-                if (leadId != null) {
-                    scoreMap.put(leadId, prob);
+                Map<String, Object> body = response.getBody();
+                if (body == null || !body.containsKey("predictions")) {
+                    throw new RuntimeException("Invalid ML service response");
                 }
+
+                List<Map<String, Object>> predictions = (List<Map<String, Object>>) body.get("predictions");
+                log.debug("Received {} predictions from ML service", predictions.size());
+                
+                for (Map<String, Object> pred : predictions) {
+                    String leadId = (String) pred.get("leadId");
+                    double prob = ((Number) pred.get("probability")).doubleValue();
+                    if (leadId != null) {
+                        scoreMap.put(leadId, prob);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("ML service call failed for chunk {}: {}", chunkIndex, e.getMessage(), e);
+                throw new RuntimeException("ML service error in chunk " + chunkIndex + ": " + e.getMessage(), e);
             }
         }
 
+        log.info("Received ML predictions for {} out of {} leads", scoreMap.size(), leads.size());
+        
         int count = 0;
         for (Lead lead : leads) {
             Double score = scoreMap.get(lead.getLeadId());
             if (score != null) {
-                lead.setLeadScore(score);
-                lead.setScoreReason("ML model prediction (LightGBM)");
+                RankingAdjustmentService.Result adj = rankingAdjustmentService.apply(lead, score, "ML model prediction (LightGBM)");
+                lead.setLeadScore(adj.getFinalScore());
+                lead.setScoreReason(adj.getReason());
+                lead.setScoreBreakdown(adj.getBreakdown());
+                leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.SCORE_UPDATED, null,
+                        Map.of("baseScore", score, "finalScore", adj.getFinalScore()));
                 count++;
             }
         }
-
+        
+        log.info("Applied ranking adjustments to {} leads, saving to database...", count);
+        long startSave = System.currentTimeMillis();
         leadRepository.saveAll(leads);
+        long saveDuration = System.currentTimeMillis() - startSave;
+        log.info("Batch scoring completed: {}/{} leads scored and saved in {}ms", count, leads.size(), saveDuration);
         return count;
     }
 
@@ -145,6 +199,46 @@ public class LeadScoringService {
         data.put("creditScore", lead.getCreditScore());
         data.put("employmentType", lead.getEmploymentType() != null ? lead.getEmploymentType().name() : null);
         data.put("loanAmount", lead.getLoanAmount());
+        
+        // Fetch canonical fields for this product if configured
+        if (lead.getPId() != null) {
+            ProductRankingProfile profile = productRankingProfileRepository.findByPId(lead.getPId()).orElse(null);
+            if (profile != null && profile.getCanonicalFields() != null && !profile.getCanonicalFields().isEmpty()) {
+                data.put("canonicalFields", profile.getCanonicalFields());
+            }
+        }
+        
+        return data;
+    }
+
+    /**
+     * Build lead data map using cached ProductRankingProfiles (for batch operations).
+     * Avoids repeated database queries.
+     */
+    private Map<String, Object> buildLeadDataMapWithCache(Lead lead, Map<String, ProductRankingProfile> profileCache) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("leadId", lead.getLeadId());
+        data.put("email", lead.getEmail());
+        data.put("phoneNumber", lead.getPhoneNumber());
+        data.put("aadharNumber", lead.getAadharNumber());
+        data.put("name", lead.getName());
+        data.put("sourcesSeen", lead.getSourcesSeen());
+        data.put("productsSeen", lead.getProductsSeen());
+        data.put("createdAt", lead.getCreatedAt() != null ? lead.getCreatedAt().toString() : null);
+        data.put("pId", lead.getPId());
+        data.put("income", lead.getIncome());
+        data.put("creditScore", lead.getCreditScore());
+        data.put("employmentType", lead.getEmploymentType() != null ? lead.getEmploymentType().name() : null);
+        data.put("loanAmount", lead.getLoanAmount());
+        
+        // Use cached canonical fields for this product (no DB query)
+        if (lead.getPId() != null) {
+            ProductRankingProfile profile = profileCache.get(lead.getPId());
+            if (profile != null && profile.getCanonicalFields() != null && !profile.getCanonicalFields().isEmpty()) {
+                data.put("canonicalFields", profile.getCanonicalFields());
+            }
+        }
+        
         return data;
     }
 
@@ -152,18 +246,26 @@ public class LeadScoringService {
 
     private ScoringResult scoreLeadWithHeuristic(Lead lead) {
         ScoringResult result = calculateHeuristicScore(lead);
-        lead.setLeadScore(result.score);
-        lead.setScoreReason(result.reason + " [heuristic fallback]");
+        RankingAdjustmentService.Result adj = rankingAdjustmentService.apply(lead, result.score, result.reason + " [heuristic fallback]");
+        lead.setLeadScore(adj.getFinalScore());
+        lead.setScoreReason(adj.getReason());
+        lead.setScoreBreakdown(adj.getBreakdown());
         leadRepository.save(lead);
-        return result;
+        leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.SCORE_UPDATED, null,
+                Map.of("baseScore", result.score, "finalScore", adj.getFinalScore()));
+        return new ScoringResult(adj.getFinalScore(), adj.getReason(), adj.getBreakdown());
     }
 
     private int batchScoreWithHeuristic(List<Lead> leads) {
         int count = 0;
         for (Lead lead : leads) {
             ScoringResult result = calculateHeuristicScore(lead);
-            lead.setLeadScore(result.score);
-            lead.setScoreReason(result.reason + " [heuristic fallback]");
+            RankingAdjustmentService.Result adj = rankingAdjustmentService.apply(lead, result.score, result.reason + " [heuristic fallback]");
+            lead.setLeadScore(adj.getFinalScore());
+            lead.setScoreReason(adj.getReason());
+            lead.setScoreBreakdown(adj.getBreakdown());
+            leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.SCORE_UPDATED, null,
+                    Map.of("baseScore", result.score, "finalScore", adj.getFinalScore()));
             count++;
         }
         leadRepository.saveAll(leads);

@@ -8,10 +8,27 @@ export interface Lead {
   product_name?: string;
   source_id: string;
   source_name?: string;
-  status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED' | 'new' | 'contacted' | 'converted' | 'rejected'; // Support both old and new
+  status:
+    | 'NEW'
+    | 'ASSIGNED'
+    | 'CONTACTED'
+    | 'PROPOSAL_SENT'
+    | 'IN_PROGRESS'
+    | 'QUALIFIED'
+    | 'CONVERTED'
+    | 'NOT_CONVERTED'
+    | 'CLOSED'
+    | 'new'
+    | 'contacted'
+    | 'converted'
+    | 'rejected';
+  /** From backend workflow — valid next states (+ current) for dropdown */
+  allowed_next_states?: string[];
+  team_id?: string | null;
   created_at: string;
   lead_score?: number | null;
   score_reason?: string | null;
+  score_breakdown?: Record<string, unknown> | null;
   assigned_user_id?: string | null;
   assigned_user_name?: string | null;
 }
@@ -58,7 +75,30 @@ export interface BackendLead {
   updatedAt?: string | Date;
   leadScore?: number | null;
   scoreReason?: string | null;
-  status?: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED';
+  status?:
+    | 'NEW'
+    | 'ASSIGNED'
+    | 'CONTACTED'
+    | 'PROPOSAL_SENT'
+    | 'IN_PROGRESS'
+    | 'QUALIFIED'
+    | 'CONVERTED'
+    | 'NOT_CONVERTED'
+    | 'CLOSED';
+  /** Primary workflow state (mirrors status when present) */
+  state?:
+    | 'NEW'
+    | 'ASSIGNED'
+    | 'CONTACTED'
+    | 'PROPOSAL_SENT'
+    | 'IN_PROGRESS'
+    | 'QUALIFIED'
+    | 'CONVERTED'
+    | 'NOT_CONVERTED'
+    | 'CLOSED';
+  allowedNextStates?: string[];
+  teamId?: string | null;
+  scoreBreakdown?: Record<string, unknown> | null;
   assignedUserId?: string | null;
   assignedUserName?: string | null;
   statusUpdatedAt?: string | Date;
@@ -67,10 +107,28 @@ export interface BackendLead {
   [key: string]: any;
 }
 
+/** Per-product ML feature selection and post-ML ranking rules (backend: ProductRankingProfile) */
+export interface ProductRankingRule {
+  field: string;
+  operator: string;
+  value?: string | null;
+  weightDelta: number;
+  maxBoost?: number | null;
+}
+
+export interface ProductRankingProfile {
+  id?: string;
+  pId: string;
+  canonicalFields?: string[]; // Selected ML features for this product
+  rules?: ProductRankingRule[]; // Post-ML ranking adjustment rules
+  updatedAt?: string | null;
+}
+
 export interface BackendProduct {
   id?: string; // MongoDB _id
   pId: string; // Product ID (camelCase)
   pName: string; // Product Name (camelCase)
+  teamId?: string; // ID of the team associated with this product
   deduplicationFields?: string[]; // Canonical field names for lead deduplication
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -96,6 +154,42 @@ export interface BackendCanonicalField {
   version: string; // e.g., 'v1'
   createdAt?: string | Date;
   updatedAt?: string | Date;
+}
+
+/** Lead audit timeline (GET /api/leads/{id}/history) */
+export interface LeadHistoryEvent {
+  id?: string;
+  leadId?: string;
+  type?: string;
+  at?: string;
+  actorUserId?: string | null;
+  payload?: Record<string, unknown>;
+}
+
+export interface LeadHistoryData {
+  leadId?: string;
+  events?: LeadHistoryEvent[];
+  totalElements?: number;
+  merged_from?: string[];
+  sources_seen?: string[];
+  products_seen?: string[];
+  created_at?: string;
+}
+
+export interface TeamDto {
+  id?: string;
+  name: string;
+  adminUserId: string;
+  memberUserIds: string[];
+  roundRobinIndex?: number;
+}
+
+export interface AssignmentRuleDto {
+  id?: string;
+  priority: number;
+  productId?: string | null;
+  sourceId?: string | null;
+  teamId: string;
 }
 
 // Spring Boot API Response Wrapper
@@ -184,4 +278,15 @@ export interface LeadsResponse {
     total: number;
     totalPages: number;
   };
+}
+
+export interface UserResponse {
+  id: string;
+  userCode?: string;
+  username: string;
+  email: string;
+  role: 'USER' | 'ADMIN';
+  accountStatus: 'ACTIVE' | 'INVITED';
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }

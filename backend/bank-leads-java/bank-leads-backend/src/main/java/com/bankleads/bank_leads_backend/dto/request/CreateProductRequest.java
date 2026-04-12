@@ -21,6 +21,14 @@ public class CreateProductRequest {
     @Size(min = 2, max = 100, message = "Product name must be between 2 and 100 characters")
     private String pName;
     
+    /**
+     * ID of the team associated with this product.
+     * Required field - products must belong to a team.
+     */
+    @JsonProperty("team_id")
+    @NotBlank(message = "Team ID is required")
+    private String teamId;
+    
     /** Canonical fields used for lead deduplication: e.g. ["email", "phone_number", "aadhar_number"] */
     @JsonProperty("deduplication_fields")
     private List<String> deduplicationFields;

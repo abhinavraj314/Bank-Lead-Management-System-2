@@ -35,6 +35,14 @@ public class Product {
     private String pName;
     
     /**
+     * ID of the team associated with this product.
+     * When leads match this product in assignment rules, they are routed to this team.
+     */
+    @Field("team_id")
+    @JsonProperty("teamId")
+    private String teamId;
+    
+    /**
      * Canonical field names used for lead deduplication for this product.
      * Allowed values: "email", "phone_number", "aadhar_number".
      * When null or empty, defaults to all three.

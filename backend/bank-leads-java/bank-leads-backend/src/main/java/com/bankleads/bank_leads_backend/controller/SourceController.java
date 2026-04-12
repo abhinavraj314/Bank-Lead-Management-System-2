@@ -20,6 +20,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/sources")
@@ -34,10 +36,18 @@ public class SourceController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Source>> createSource(@Valid @RequestBody CreateSourceRequest request) {
-        // ✅ FIXED - Use getSId() and getSName()
-        if (sourceRepository.existsBySourceId(request.getSId())) {
-            return ResponseUtil.error("Source with s_id '" + request.getSId() + "' already exists",
-                    HttpStatus.CONFLICT);
+        String providedSId = request.getSId();
+        String sId = (providedSId == null || providedSId.trim().isEmpty())
+                ? generateUniqueSourceId()
+                : providedSId.trim().toUpperCase();
+
+        if (sourceRepository.existsBySourceId(sId)) {
+            // If sId was provided explicitly, report conflict; otherwise regenerate once.
+            if (providedSId != null && !providedSId.trim().isEmpty()) {
+                return ResponseUtil.error("Source with s_id '" + sId + "' already exists",
+                        HttpStatus.CONFLICT);
+            }
+            sId = generateUniqueSourceId();
         }
 
         // Validate columns: at least one column must be provided
@@ -58,7 +68,7 @@ public class SourceController {
         }
         
         Source source = Source.builder()
-                .sId(request.getSId().toUpperCase())
+                .sId(sId)
                 .sName(request.getSName())
                 .pId(request.getPId().toUpperCase())
                 .columns(normalizedColumns)
@@ -69,6 +79,36 @@ public class SourceController {
         Source saved = sourceRepository.save(source);
         return ResponseUtil.success(saved, "Source created successfully",
                 HttpStatus.CREATED);
+    }
+
+    private String generateUniqueSourceId() {
+        // Auto-generate sequential IDs like SRC001, SRC002, ...
+        // We look for existing source IDs that match SRC + 3 digits.
+        final String prefix = "SRC";
+        final Pattern pattern = Pattern.compile("^" + prefix + "(\\d{3})$", Pattern.CASE_INSENSITIVE);
+
+        int maxNumeric = 0;
+        List<Source> allSources = sourceRepository.findAll();
+        for (Source s : allSources) {
+            if (s == null || s.getSId() == null) continue;
+            String sId = s.getSId().toUpperCase();
+            Matcher matcher = pattern.matcher(sId);
+            if (matcher.matches()) {
+                int num = Integer.parseInt(matcher.group(1));
+                maxNumeric = Math.max(maxNumeric, num);
+            }
+        }
+
+        // Start from max+1 and increment until we find an unused one.
+        for (int i = 1; i <= 100; i++) {
+            int candidateNum = maxNumeric + i;
+            String candidate = prefix + String.format("%03d", candidateNum);
+            if (!sourceRepository.existsBySourceId(candidate)) {
+                return candidate;
+            }
+        }
+
+        throw new IllegalStateException("Could not generate a unique sequential source id");
     }
     
     @GetMapping

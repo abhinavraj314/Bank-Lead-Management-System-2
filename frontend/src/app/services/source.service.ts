@@ -59,19 +59,23 @@ export class SourceService {
 
   /**
    * Create a new source with columns metadata
-   * Requires s_id, s_name, p_id, and columns array
+   * Backend auto-generates s_id if not provided
    */
   createSource(source: {
-    s_id: string;
+    s_id?: string;
     s_name: string;
     p_id: string;
     columns?: string[];
   }): Observable<Source> {
     const requestBody: any = {
-      s_id: source.s_id.toUpperCase(),
       s_name: source.s_name,
       p_id: source.p_id.toUpperCase(),
     };
+
+    // Add s_id if explicitly provided
+    if (source.s_id) {
+      requestBody.s_id = source.s_id.toUpperCase();
+    }
 
     // Add columns to request payload if provided
     if (source.columns && source.columns.length > 0) {

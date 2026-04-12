@@ -12,6 +12,11 @@ public interface UserRepository extends MongoRepository<User, String> {
     @Query("{ 'email': { $regex: '^?0$', $options: 'i' } }")
     Optional<User> findByEmail(String email);
     
+    Optional<User> findByUserCode(String userCode);
+    
+    @Query(sort = "{ 'userCode': -1 }", value = "{ 'userCode': { $exists: true } }", fields = "{ 'userCode': 1 }")
+    Optional<User> findTopByOrderByUserCodeDesc();
+    
     boolean existsByUsername(String username);
     
     boolean existsByEmail(String email);

@@ -7,6 +7,7 @@ import com.bankleads.bank_leads_backend.model.CanonicalField;
 import com.bankleads.bank_leads_backend.model.Lead;
 import com.bankleads.bank_leads_backend.model.Product;
 import com.bankleads.bank_leads_backend.model.Source;
+import com.bankleads.bank_leads_backend.model.LeadEvent;
 import com.bankleads.bank_leads_backend.model.User;
 import com.bankleads.bank_leads_backend.repository.CanonicalFieldRepository;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
@@ -17,7 +18,9 @@ import com.bankleads.bank_leads_backend.service.CanonicalFieldDeduplicationServi
 import com.bankleads.bank_leads_backend.service.DeduplicationService;
 import com.bankleads.bank_leads_backend.service.LeadScoringService;
 import com.bankleads.bank_leads_backend.service.LeadService;
+import com.bankleads.bank_leads_backend.service.LeadAuditService;
 import com.bankleads.bank_leads_backend.service.LeadStateService;
+import com.bankleads.bank_leads_backend.service.WorkflowService;
 import com.bankleads.bank_leads_backend.util.CsvParserUtil;
 import com.bankleads.bank_leads_backend.util.CsvValidationUtil;
 import com.bankleads.bank_leads_backend.util.LeadNormalizationUtil;
@@ -56,6 +59,15 @@ import java.util.stream.Collectors;
 public class LeadController {
 
     private static final Logger log = LoggerFactory.getLogger(LeadController.class);
+
+    /** Indexed Mongo fields only — avoids arbitrary sort injection. */
+    private static final Set<String> ALLOWED_LEAD_SORT_FIELDS = Set.of(
+            "createdAt", "leadScore", "updatedAt", "statusUpdatedAt");
+
+    private static final List<Lead.LeadStatus> TERMINAL_STATUSES_FOR_FILTER = List.of(
+            Lead.LeadStatus.CONVERTED,
+            Lead.LeadStatus.NOT_CONVERTED,
+            Lead.LeadStatus.CLOSED);
     
     private final LeadRepository leadRepository;
     private final ProductRepository productRepository;
@@ -67,6 +79,8 @@ public class LeadController {
     private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
     private final DeduplicationService deduplicationService;
     private final LeadStateService leadStateService;
+    private final WorkflowService workflowService;
+    private final LeadAuditService leadAuditService;
     private final MongoTemplate mongoTemplate;
     
     
@@ -442,14 +456,16 @@ public class LeadController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String assigned_user_id,
             @RequestParam(required = false) Boolean assigned_to_me,
+            @RequestParam(required = false) Boolean hide_terminal,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "25") int limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "desc") String order,
             HttpServletRequest request) {
-        
-        Pageable pageable = PageRequest.of(page - 1, Math.min(10000, Math.max(1, limit)),
-                Sort.by("desc".equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC, sort));
+
+        String sortField = ALLOWED_LEAD_SORT_FIELDS.contains(sort) ? sort : "createdAt";
+        Pageable pageable = PageRequest.of(page - 1, Math.min(200, Math.max(1, limit)),
+                Sort.by("desc".equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC, sortField));
         
         // Get current user info for role-based filtering
         String currentUserId = getCurrentUserId(request);
@@ -476,11 +492,14 @@ public class LeadController {
             query.addCriteria(Criteria.where("sourceId").is(source_id.toUpperCase()));
         }
         
-        // Status filter
+        // Status filter (match either legacy `status` or primary `state` field)
         if (status != null && !status.trim().isEmpty()) {
             try {
                 Lead.LeadStatus statusEnum = Lead.LeadStatus.valueOf(status.trim().toUpperCase());
-                query.addCriteria(Criteria.where("status").is(statusEnum));
+                query.addCriteria(new Criteria().orOperator(
+                        Criteria.where("status").is(statusEnum),
+                        Criteria.where("state").is(statusEnum)
+                ));
             } catch (IllegalArgumentException e) {
                 return ResponseUtil.error("Invalid status: " + status, HttpStatus.BAD_REQUEST);
             }
@@ -522,6 +541,14 @@ public class LeadController {
                     Criteria.where("email").regex(escaped, "i"),
                     Criteria.where("phoneNumber").regex(escaped, "i")
             ));
+        }
+
+        if (Boolean.TRUE.equals(hide_terminal)) {
+            query.addCriteria(new Criteria().norOperator(
+                    Criteria.where("state").in(TERMINAL_STATUSES_FOR_FILTER),
+                    new Criteria().andOperator(
+                            Criteria.where("state").is(null),
+                            Criteria.where("status").in(TERMINAL_STATUSES_FOR_FILTER))));
         }
         
         long total = mongoTemplate.count(query, Lead.class);
@@ -571,6 +598,11 @@ public class LeadController {
                     .assignedUserName(assignedUserName)
                     .statusUpdatedAt(lead.getStatusUpdatedAt())
                     .assignedAt(lead.getAssignedAt())
+                    .allowedNextStates(workflowService.allowedNextStates(lead).stream()
+                            .map(Enum::name)
+                            .collect(Collectors.toList()))
+                    .teamId(lead.getTeamId())
+                    .scoreBreakdown(lead.getScoreBreakdown())
                     .build();
         }).collect(Collectors.toList());
         
@@ -595,17 +627,52 @@ public class LeadController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Lead>> createLead(@Valid @RequestBody CreateLeadRequest request) {
+        log.debug("[DEBUG] Raw request received: {}", request);
+        log.debug("[DEBUG] pId raw value: '{}' (type: {}, isNull: {}, length: {})", 
+                request.getPId(), 
+                request.getPId() != null ? request.getPId().getClass().getName() : "null",
+                request.getPId() == null,
+                request.getPId() != null ? request.getPId().length() : "N/A");
+        log.debug("[DEBUG] sourceId raw value: '{}' (type: {}, isNull: {}, length: {})", 
+                request.getSourceId(), 
+                request.getSourceId() != null ? request.getSourceId().getClass().getName() : "null",
+                request.getSourceId() == null,
+                request.getSourceId() != null ? request.getSourceId().length() : "N/A");
+        log.info("Received lead creation request: name={}, email={}, phone={}, aadhar={}, pId={}, sourceId={}",
+                request.getName(), request.getEmail(), request.getPhoneNumber(), request.getAadharNumber(),
+                request.getPId(), request.getSourceId());
+        
+        // Validate at least one identifier
         if (request.getPhoneNumber() == null && request.getEmail() == null && request.getAadharNumber() == null) {
+            log.warn("Lead creation failed: no identifiers provided");
             return ResponseUtil.error("At least one identifier (phone_number, email, or aadhar_number) is required",
                     HttpStatus.BAD_REQUEST);
         }
         
-        if (request.getPId() != null && !productRepository.existsByPId(request.getPId().toUpperCase())) {
+        // Validate phone number format if provided
+        if (request.getPhoneNumber() != null && !request.getPhoneNumber().matches("^\\d{10}$")) {
+            log.warn("Lead creation failed: invalid phone number format: {}", request.getPhoneNumber());
+            return ResponseUtil.error("Phone number must be exactly 10 digits",
+                    HttpStatus.BAD_REQUEST);
+        }
+        
+        // Validate aadhar number format if provided
+        if (request.getAadharNumber() != null && !request.getAadharNumber().matches("^\\d{12}$")) {
+            log.warn("Lead creation failed: invalid aadhar number format: {}", request.getAadharNumber());
+            return ResponseUtil.error("Aadhar number must be exactly 12 digits",
+                    HttpStatus.BAD_REQUEST);
+        }
+        
+        // Validate product exists (pId is guaranteed non-null by @NotBlank)
+        if (!productRepository.existsByPId(request.getPId().toUpperCase())) {
+            log.warn("Lead creation failed: product not found (pId={})", request.getPId());
             return ResponseUtil.error("Product '" + request.getPId() + "' not found",
                     HttpStatus.BAD_REQUEST);
         }
         
-        if (request.getSourceId() != null && !sourceRepository.existsBySourceId(request.getSourceId().toUpperCase())) {
+        // Validate source exists (sourceId is guaranteed non-null by @NotBlank)
+        if (!sourceRepository.existsBySourceId(request.getSourceId().toUpperCase())) {
+            log.warn("Lead creation failed: source not found (sourceId={})", request.getSourceId());
             return ResponseUtil.error("Source '" + request.getSourceId() + "' not found",
                     HttpStatus.BAD_REQUEST);
         }
@@ -634,6 +701,7 @@ public class LeadController {
         );
         
         LeadService.UpsertResult result = leadService.upsertLead(normalized, ctx);
+        log.info("Lead created successfully: leadId={}", result.getLead().getLeadId());
         
         return ResponseUtil.success(result.getLead(), "Lead created successfully",
                 HttpStatus.CREATED);
@@ -720,11 +788,17 @@ public class LeadController {
     }
     
     @GetMapping("/{id}/history")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getLeadHistory(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getLeadHistory(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size) {
         return leadRepository.findByLeadId(id)
                 .map(lead -> {
+                    var eventPage = leadAuditService.listHistory(id, page, size);
                     Map<String, Object> history = new HashMap<>();
-                    history.put("lead_id", lead.getLeadId());
+                    history.put("leadId", lead.getLeadId());
+                    history.put("events", eventPage.getContent());
+                    history.put("totalElements", eventPage.getTotalElements());
                     history.put("merged_from", lead.getMergedFrom());
                     history.put("sources_seen", lead.getSourcesSeen());
                     history.put("products_seen", lead.getProductsSeen());
@@ -809,7 +883,8 @@ public class LeadController {
                 .map(lead -> {
                     String currentUserId = getCurrentUserId(request);
                     boolean isAdmin = isCurrentUserAdmin(request);
-                    
+                    Lead.LeadStatus fromNorm = workflowService.normalizeCurrentState(lead);
+
                     // Check permission
                     if (!leadStateService.canUpdateState(lead, currentUserId, isAdmin)) {
                         return ResponseUtil.<LeadDTO>error(
@@ -822,7 +897,12 @@ public class LeadController {
                     try {
                         leadStateService.updateStatus(lead, newStatus, isAdmin);
                         leadRepository.save(lead);
-                        
+                        Lead.LeadStatus toNorm = workflowService.normalizeCurrentState(lead);
+                        if (fromNorm != toNorm) {
+                            leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.STATE_CHANGED, currentUserId,
+                                    Map.of("from", fromNorm.name(), "to", toNorm.name()));
+                        }
+
                         // Return enriched DTO
                         return enrichLeadToDTO(lead)
                                 .map(dto -> ResponseUtil.success(dto, "Lead status updated"))
@@ -851,6 +931,8 @@ public class LeadController {
         
         return leadRepository.findByLeadId(id)
                 .map(lead -> {
+                    String prevAssigned = lead.getAssignedUserId();
+
                     // Sales users: can only self-assign unassigned leads
                     if (!isAdmin) {
                         if (lead.getAssignedUserId() != null) {
@@ -884,7 +966,24 @@ public class LeadController {
                     
                     lead.setAssignedAt(LocalDateTime.now());
                     leadRepository.save(lead);
-                    
+
+                    if (!Objects.equals(prevAssigned, lead.getAssignedUserId())) {
+                        String fromUserName = "";
+                        String toUserName = "";
+                        if (prevAssigned != null) {
+                            User prevUser = userRepository.findById(prevAssigned).orElse(null);
+                            fromUserName = prevUser != null ? (prevUser.getUsername() != null ? prevUser.getUsername() : prevUser.getEmail()) : "";
+                        }
+                        if (lead.getAssignedUserId() != null) {
+                            User toUser = userRepository.findById(lead.getAssignedUserId()).orElse(null);
+                            toUserName = toUser != null ? (toUser.getUsername() != null ? toUser.getUsername() : toUser.getEmail()) : "";
+                        }
+                        leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.ASSIGNMENT_CHANGED, currentUserId,
+                                Map.of(
+                                        "fromUserId", fromUserName,
+                                        "toUserId", toUserName));
+                    }
+
                     return enrichLeadToDTO(lead)
                             .map(dto -> ResponseUtil.success(dto, "Lead assignment updated"))
                             .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
@@ -918,12 +1017,25 @@ public class LeadController {
                     if (user == null) {
                         return ResponseUtil.<LeadDTO>error("User not found", HttpStatus.NOT_FOUND);
                     }
-                    
+
+                    String prevAssigned = lead.getAssignedUserId();
                     lead.setAssignedUserId(currentUserId);
                     lead.setAssignedUserName(user.getUsername() != null ? user.getUsername() : user.getEmail());
                     lead.setAssignedAt(LocalDateTime.now());
                     leadRepository.save(lead);
-                    
+
+                    if (!Objects.equals(prevAssigned, lead.getAssignedUserId())) {
+                        String toUserName = "";
+                        if (lead.getAssignedUserId() != null) {
+                            User toUser = userRepository.findById(lead.getAssignedUserId()).orElse(null);
+                            toUserName = toUser != null ? (toUser.getUsername() != null ? toUser.getUsername() : toUser.getEmail()) : "";
+                        }
+                        leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.ASSIGNMENT_CHANGED, currentUserId,
+                                Map.of(
+                                        "fromUserId", "",
+                                        "toUserId", toUserName));
+                    }
+
                     return enrichLeadToDTO(lead)
                             .map(dto -> ResponseUtil.success(dto, "Lead assigned to you"))
                             .orElse(ResponseUtil.<LeadDTO>error("Failed to enrich lead", HttpStatus.INTERNAL_SERVER_ERROR));
@@ -953,6 +1065,9 @@ public class LeadController {
                             HttpStatus.FORBIDDEN
                         );
                     }
+
+                    Lead.LeadStatus fromNorm = workflowService.normalizeCurrentState(lead);
+                    String prevAssigned = lead.getAssignedUserId();
                     
                     // Update status if provided
                     if (updates.containsKey("status")) {
@@ -961,6 +1076,12 @@ public class LeadController {
                             try {
                                 Lead.LeadStatus newStatus = Lead.LeadStatus.valueOf(statusObj.toString().trim().toUpperCase());
                                 leadStateService.updateStatus(lead, newStatus, isAdmin);
+                                Lead.LeadStatus toNorm = workflowService.normalizeCurrentState(lead);
+                                if (fromNorm != toNorm) {
+                                    leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.STATE_CHANGED, currentUserId,
+                                            Map.of("from", fromNorm.name(), "to", toNorm.name()));
+                                    fromNorm = toNorm;
+                                }
                             } catch (IllegalArgumentException e) {
                                 return ResponseUtil.<LeadDTO>error("Invalid status: " + statusObj, HttpStatus.BAD_REQUEST);
                             }
@@ -999,6 +1120,24 @@ public class LeadController {
                             lead.setAssignedUserName(user.getUsername() != null ? user.getUsername() : user.getEmail());
                         }
                         lead.setAssignedAt(LocalDateTime.now());
+                    }
+
+                    if (updates.containsKey("assignedUserId")
+                            && !Objects.equals(prevAssigned, lead.getAssignedUserId())) {
+                        String fromUserName = "";
+                        String toUserName = "";
+                        if (prevAssigned != null) {
+                            User prevUser = userRepository.findById(prevAssigned).orElse(null);
+                            fromUserName = prevUser != null ? (prevUser.getUsername() != null ? prevUser.getUsername() : prevUser.getEmail()) : "";
+                        }
+                        if (lead.getAssignedUserId() != null) {
+                            User toUser = userRepository.findById(lead.getAssignedUserId()).orElse(null);
+                            toUserName = toUser != null ? (toUser.getUsername() != null ? toUser.getUsername() : toUser.getEmail()) : "";
+                        }
+                        leadAuditService.append(lead.getLeadId(), LeadEvent.EventType.ASSIGNMENT_CHANGED, currentUserId,
+                                Map.of(
+                                        "fromUserId", fromUserName,
+                                        "toUserId", toUserName));
                     }
                     
                     leadRepository.save(lead);
@@ -1089,6 +1228,11 @@ public class LeadController {
                 .assignedUserName(assignedUserName)
                 .statusUpdatedAt(lead.getStatusUpdatedAt())
                 .assignedAt(lead.getAssignedAt())
+                .allowedNextStates(workflowService.allowedNextStates(lead).stream()
+                        .map(Enum::name)
+                        .collect(Collectors.toList()))
+                .teamId(lead.getTeamId())
+                .scoreBreakdown(lead.getScoreBreakdown())
                 .build();
         
         return Optional.of(dto);

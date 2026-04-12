@@ -144,12 +144,8 @@ export class SourcesPage implements OnInit {
     this.isCreating.set(true);
     this.errorMessage.set('');
 
-    // Generate s_id from source name
-    const sId = this.newSource.source_name.toUpperCase().replace(/\s+/g, '_');
-
     this.sourceService
       .createSource({
-        s_id: sId,
         s_name: this.newSource.source_name.trim(),
         p_id: this.newSource.product_id,
         columns: validColumns,

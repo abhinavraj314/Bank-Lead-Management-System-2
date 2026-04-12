@@ -1,4 +1,5 @@
 import { Component, signal, computed, inject, PLATFORM_ID, effect } from '@angular/core';
+import { finalize } from 'rxjs';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -8,7 +9,7 @@ import { LeadService } from '../../services/lead.service';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
 
-import { Product, Source, Lead } from '../../models/lead.models';
+import { Product, Source, Lead, LeadHistoryData, LeadHistoryEvent } from '../../models/lead.models';
 
 @Component({
   selector: 'app-leads',
@@ -62,6 +63,13 @@ export class Leads {
     return this.sources().filter((s) => s.product_id === pId);
   });
 
+  // Sources for modal lead creation (filtered by product selected in modal)
+  sourcesForModalProduct = computed(() => {
+    const pId = this.newLeadForm().pId;
+    if (!pId) return [];
+    return this.sources().filter((s) => s.product_id === pId);
+  });
+
   // Pagination (server-side: one page fetched at a time)
   currentPage = signal(1);
   pageSize = signal(25);
@@ -91,36 +99,35 @@ export class Leads {
   // Inline editing state
   updatingLeadId = signal<string | null>(null);
 
-  // Sort by score for ranking
+  // Individual lead creation modal state
+  showCreateLeadModal = signal(false);
+  creatingleadError = signal<string | null>(null);
+  creatingLead = signal(false);
+  newLeadForm = signal({
+    name: '',
+    email: '',
+    phoneNumber: '',
+    aadharNumber: '',
+    pId: '',
+    sourceId: '',
+    income: null as number | null,
+    creditScore: null as number | null,
+    employmentType: null as 'SALARIED' | 'SELF_EMPLOYED' | null,
+    loanAmount: null as number | null,
+  });
+
+  historyLead = signal<Lead | null>(null);
+  historyLoading = signal(false);
+  historyData = signal<LeadHistoryData | null>(null);
+  historyError = signal<string | null>(null);
+
+  /** Server applies sort; toggling refetches page 1 */
   sortBy = signal<'created_at' | 'lead_score'>('created_at');
 
-  // Server returns one page; sort client-side only for current page
-  sortedLeads = computed(() => {
-    const all = [...this.allLeads()];
-    if (this.sortBy() === 'lead_score') {
-      all.sort((a, b) => (b.lead_score ?? -1) - (a.lead_score ?? -1));
-    }
-    return all;
-  });
+  /** Current page rows from the API (server-side pagination) */
+  paginatedLeads = computed(() => this.allLeads());
 
-  // Current page rows to show (client-side pagination over full result set)
-  paginatedLeads = computed(() => {
-    const leads = this.sortedLeads();
-    const filtered = this.showClosedLeads()
-      ? leads
-      : leads.filter((l) => l.status !== 'CLOSED');
-
-    const page = this.currentPage();
-    const size = this.pageSize();
-    const start = (page - 1) * size;
-    const end = start + size;
-
-    return filtered.slice(start, end);
-  });
-
-  totalPages = computed(() =>
-    Math.max(1, Math.ceil(this.totalLeads() / this.pageSize())),
-  );
+  totalPages = computed(() => Math.max(1, Math.ceil(this.totalLeads() / this.pageSize())));
 
   filteredTotal = computed(() => this.totalLeads());
 
@@ -133,11 +140,17 @@ export class Leads {
     return count;
   });
 
-  /** First 4 page numbers for compact pagination; rest via "Go to page" */
+  /** Sliding window of page numbers around the current page */
   visiblePageNumbers = computed(() => {
     const total = this.totalPages();
-    const maxVisible = 4;
-    return Array.from({ length: Math.min(maxVisible, total) }, (_, i) => i + 1);
+    const cur = this.currentPage();
+    const maxVisible = 5;
+    const half = Math.floor(maxVisible / 2);
+    let end = Math.min(total, cur + half);
+    let start = Math.max(1, end - maxVisible + 1);
+    end = Math.min(total, start + maxVisible - 1);
+    start = Math.max(1, end - maxVisible + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   });
 
   constructor() {
@@ -160,9 +173,24 @@ export class Leads {
 
     if (!pId || !sId) return;
 
-    const isValid =
-      this.sources().some((s) => s.source_id === sId && s.product_id === pId);
+    const isValid = this.sources().some((s) => s.source_id === sId && s.product_id === pId);
     if (!isValid) this.selectedSource.set('');
+  });
+
+  // Keep modal source valid when user changes product in modal
+  // If current sourceId doesn't belong to the selected product, clear it
+  modalProductGuard = effect(() => {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const form = this.newLeadForm();
+    const pId = form.pId;
+    const sId = form.sourceId;
+
+    if (!pId || !sId) return;
+
+    const isValid = this.sources().some((s) => s.source_id === sId && s.product_id === pId);
+    if (!isValid) {
+      this.updateNewLeadForm('sourceId', '');
+    }
   });
 
   isAdmin(): boolean {
@@ -198,6 +226,176 @@ export class Leads {
     });
   }
 
+  openCreateLeadModal() {
+    this.newLeadForm.set({
+      name: '',
+      email: '',
+      phoneNumber: '',
+      aadharNumber: '',
+      pId: '',
+      sourceId: '',
+      income: null,
+      creditScore: null,
+      employmentType: null,
+      loanAmount: null,
+    });
+    this.creatingleadError.set(null);
+    this.showCreateLeadModal.set(true);
+  }
+
+  closeCreateLeadModal() {
+    this.showCreateLeadModal.set(false);
+    this.creatingleadError.set(null);
+  }
+
+  submitCreateLead() {
+    const form = this.newLeadForm();
+    console.log('[DEBUG] Form values before validation:', {
+      pId: form.pId,
+      pIdTrimmed: form.pId?.trim(),
+      pIdLength: form.pId?.length,
+      sourceId: form.sourceId,
+      sourceIdTrimmed: form.sourceId?.trim(),
+      sourceIdLength: form.sourceId?.length,
+      email: form.email,
+      phoneNumber: form.phoneNumber,
+      aadharNumber: form.aadharNumber,
+    });
+
+    const errors: string[] = [];
+
+    // Validate product and source (trim whitespace for check)
+    if (!form.pId || form.pId.trim() === '') {
+      errors.push('Product is required');
+    }
+    if (!form.sourceId || form.sourceId.trim() === '') {
+      errors.push('Source is required');
+    }
+
+    // Validate at least one identifier
+    if (!form.email && !form.phoneNumber && !form.aadharNumber) {
+      errors.push('At least one identifier (email, phone, or aadhar) is required');
+    }
+
+    // Validate email format if provided
+    if (form.email && !form.email.includes('@')) {
+      errors.push('Invalid email format');
+    }
+
+    // Validate phone number
+    if (form.phoneNumber && !/^\d{10}$/.test(form.phoneNumber)) {
+      errors.push('Phone number must be exactly 10 digits');
+    }
+
+    // Validate aadhar number
+    if (form.aadharNumber && !/^\d{12}$/.test(form.aadharNumber)) {
+      errors.push('Aadhar number must be exactly 12 digits');
+    }
+
+    // Validate credit score range
+    if (form.creditScore !== null && (form.creditScore < 550 || form.creditScore > 850)) {
+      errors.push('Credit score must be between 550 and 850');
+    }
+
+    // Validate income and loan amount
+    if (form.income !== null && form.income < 0) {
+      errors.push('Income must be non-negative');
+    }
+    if (form.loanAmount !== null && form.loanAmount < 0) {
+      errors.push('Loan amount must be non-negative');
+    }
+
+    if (errors.length > 0) {
+      this.creatingleadError.set(errors.join('; '));
+      return;
+    }
+
+    this.creatingLead.set(true);
+    this.creatingleadError.set(null);
+
+    // Build request with trimmed values
+    const requestBody: any = {
+      pId: form.pId.trim(),
+      sourceId: form.sourceId.trim(),
+    };
+    if (form.name && form.name.trim()) requestBody.name = form.name.trim();
+    if (form.email && form.email.trim()) requestBody.email = form.email.trim();
+    if (form.phoneNumber && form.phoneNumber.trim())
+      requestBody.phoneNumber = form.phoneNumber.trim();
+    if (form.aadharNumber && form.aadharNumber.trim())
+      requestBody.aadharNumber = form.aadharNumber.trim();
+    if (form.income !== null) requestBody.income = form.income;
+    if (form.creditScore !== null) requestBody.creditScore = form.creditScore;
+    if (form.employmentType) requestBody.employmentType = form.employmentType;
+    if (form.loanAmount !== null) requestBody.loanAmount = form.loanAmount;
+
+    console.log('[DEBUG] Final request body being sent to backend:', requestBody);
+    console.log('[DEBUG] Request body JSON:', JSON.stringify(requestBody));
+    console.log('[DEBUG] Request body keys:', Object.keys(requestBody));
+
+    this.leadService.createLead(requestBody).subscribe({
+      next: (lead) => {
+        this.creatingLead.set(false);
+        this.creatingleadError.set(null);
+        this.toast.success(`Lead created successfully (ID: ${lead.lead_id})`);
+        this.closeCreateLeadModal();
+        // Refresh leads list
+        this.currentPage.set(1);
+        this.loadLeads();
+      },
+      error: (error) => {
+        this.creatingLead.set(false);
+        console.error('Lead creation error:', error);
+
+        // Even on error, refresh leads in case it was partially created
+        // (This handles race conditions or backend issues that create the lead despite returning error)
+        setTimeout(() => {
+          this.loadLeads();
+        }, 500);
+
+        // Try to extract meaningful error message
+        let message = 'Failed to create lead';
+        if (error?.error) {
+          // If backend error has message field
+          if (error.error.message) {
+            message = error.error.message;
+          } else if (error.error.error?.message) {
+            message = error.error.error.message;
+          } else if (error.error.details) {
+            message = error.error.details;
+          } else if (typeof error.error === 'string') {
+            message = error.error;
+          } else if (error.error.errors && Array.isArray(error.error.errors)) {
+            // Spring validation errors array
+            const validationErrors = error.error.errors as any[];
+            if (validationErrors.length > 0) {
+              message = validationErrors.map((e: any) => e.defaultMessage || e.message).join('; ');
+            }
+          }
+        } else if (error?.message) {
+          message = error.message;
+        }
+
+        // Only show error if we have a meaningful message
+        if (message && message !== 'Failed to create lead') {
+          this.creatingleadError.set(message);
+        }
+      },
+    });
+  }
+
+  updateNewLeadForm(field: string, value: any) {
+    const form = { ...this.newLeadForm() };
+    (form as any)[field] = value;
+    this.newLeadForm.set(form);
+  }
+
+  parseNumberInput(value: any): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const num = parseInt(value, 10);
+    return isNaN(num) ? null : num;
+  }
+
   loadLeads() {
     this.loadError.set(null);
     this.loadingLeads.set(true);
@@ -207,24 +405,43 @@ export class Leads {
     const q = this.searchQuery().trim() || undefined;
     const status = this.selectedStatusFilter() || undefined;
     const assigned_user_id = this.selectedAssignedUserFilter() || undefined;
-    const assigned_to_me = !this.isAdmin() ? true : undefined; // Sales users see only their leads by default
-    // Fetch all matching leads and paginate client-side so ranking applies across pages.
+    const assigned_to_me = !this.isAdmin() ? true : undefined;
+    const hide_terminal = !this.showClosedLeads();
+    const sort = this.sortBy() === 'lead_score' ? 'leadScore' : 'createdAt';
     this.leadService
-      .getLeads({ p_id, source_id, q, status, assigned_user_id, assigned_to_me })
+      .getLeads({
+        page: this.currentPage(),
+        limit: this.pageSize(),
+        p_id,
+        source_id,
+        q,
+        status,
+        assigned_user_id,
+        assigned_to_me,
+        hide_terminal,
+        sort,
+        order: 'desc',
+      })
+      .pipe(finalize(() => this.loadingLeads.set(false)))
       .subscribe({
-      next: (result) => {
-        this.allLeads.set(result.leads);
-        this.totalLeads.set(result.leads.length);
-        this.loadingLeads.set(false);
-      },
-      error: (err) => {
-        this.allLeads.set([]);
-        this.totalLeads.set(0);
-        this.loadError.set(err?.message || 'Failed to load leads');
-        this.toast.error(err?.message || 'Failed to load leads');
-        this.loadingLeads.set(false);
-      },
-    });
+        next: (result) => {
+          const total = Number(result.total) || 0;
+          this.totalLeads.set(total);
+          const maxPage = Math.max(1, Math.ceil(total / this.pageSize()) || 1);
+          if (this.currentPage() > maxPage) {
+            this.currentPage.set(maxPage);
+            this.loadLeads();
+            return;
+          }
+          this.allLeads.set(result.leads);
+        },
+        error: (err) => {
+          this.allLeads.set([]);
+          this.totalLeads.set(0);
+          this.loadError.set(err?.message || 'Failed to load leads');
+          this.toast.error(err?.message || 'Failed to load leads');
+        },
+      });
   }
 
   onFileSelected(event: Event) {
@@ -336,6 +553,7 @@ export class Leads {
       this.sortBy.set('lead_score');
     }
     this.currentPage.set(1);
+    this.loadLeads();
   }
 
   getScoreClass(score: number | null | undefined): string {
@@ -394,7 +612,19 @@ export class Leads {
   }
 
   // Status and assignment update methods
-  updateLeadStatus(leadId: string, newStatus: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED') {
+  updateLeadStatus(
+    leadId: string,
+    newStatus:
+      | 'NEW'
+      | 'ASSIGNED'
+      | 'CONTACTED'
+      | 'PROPOSAL_SENT'
+      | 'IN_PROGRESS'
+      | 'QUALIFIED'
+      | 'CONVERTED'
+      | 'NOT_CONVERTED'
+      | 'CLOSED',
+  ) {
     if (this.updatingLeadId() === leadId) return; // Prevent double-click
     this.updatingLeadId.set(leadId);
     this.leadService.updateLeadStatus(leadId, newStatus).subscribe({
@@ -461,23 +691,140 @@ export class Leads {
     });
   }
 
+  isTerminalState(status: string | undefined): boolean {
+    if (!status) return false;
+    const s = status.toUpperCase();
+    return s === 'CLOSED' || s === 'CONVERTED' || s === 'NOT_CONVERTED';
+  }
+
   getStatusDisplay(status: string | undefined): string {
     if (!status) return 'NEW';
     const s = status.toUpperCase();
     if (s === 'NEW') return 'New';
-    if (s === 'IN_PROGRESS') return 'In Progress';
-    if (s === 'QUALIFIED') return 'Qualified';
-    if (s === 'CLOSED') return 'Closed';
-    return status; // Fallback for old statuses
+    if (s === 'ASSIGNED') return 'Assigned';
+    if (s === 'CONTACTED') return 'Contacted';
+    if (s === 'PROPOSAL_SENT') return 'Proposal sent';
+    if (s === 'IN_PROGRESS') return 'In progress (legacy)';
+    if (s === 'QUALIFIED') return 'Qualified (legacy)';
+    if (s === 'CONVERTED') return 'Converted';
+    if (s === 'NOT_CONVERTED') return 'Not converted';
+    if (s === 'CLOSED') return 'Closed (legacy)';
+    return status;
   }
 
   getStatusOptions(): Array<{ value: string; label: string }> {
     return [
       { value: 'NEW', label: 'New' },
-      { value: 'IN_PROGRESS', label: 'In Progress' },
-      { value: 'QUALIFIED', label: 'Qualified' },
-      { value: 'CLOSED', label: 'Closed' },
+      { value: 'ASSIGNED', label: 'Assigned' },
+      { value: 'CONTACTED', label: 'Contacted' },
+      { value: 'PROPOSAL_SENT', label: 'Proposal sent' },
+      { value: 'IN_PROGRESS', label: 'In progress (legacy)' },
+      { value: 'QUALIFIED', label: 'Qualified (legacy)' },
+      { value: 'CONVERTED', label: 'Converted' },
+      { value: 'NOT_CONVERTED', label: 'Not converted' },
+      { value: 'CLOSED', label: 'Closed (legacy)' },
     ];
+  }
+
+  getStatusOptionsForLead(lead: Lead): Array<{ value: string; label: string }> {
+    const cur = (lead.status || 'NEW').toString().toUpperCase();
+    if (this.isTerminalState(cur)) {
+      return [{ value: cur, label: this.getStatusDisplay(cur) }];
+    }
+    const allowed = lead.allowed_next_states;
+    if (allowed == null) {
+      return this.getStatusOptions();
+    }
+    if (allowed.length === 0) {
+      return [{ value: cur, label: this.getStatusDisplay(cur) }];
+    }
+    const values = new Set<string>([cur, ...allowed.map((x) => x.toUpperCase())]);
+    return Array.from(values).map((v) => ({ value: v, label: this.getStatusDisplay(v) }));
+  }
+
+  statusSelectDisabled(lead: Lead): boolean {
+    if (this.updatingLeadId() === lead.lead_id) return true;
+    const cur = (lead.status || 'NEW').toString().toUpperCase();
+    if (this.isTerminalState(cur)) return true;
+    const allowed = lead.allowed_next_states;
+    if (allowed != null && allowed.length === 0) return true;
+    return false;
+  }
+
+  assignmentRowDisabled(lead: Lead): boolean {
+    return this.updatingLeadId() === lead.lead_id || this.isTerminalState(String(lead.status));
+  }
+
+  getScoreTitle(lead: Lead): string {
+    const reason = lead.score_reason || 'Not scored';
+    if (lead.score_breakdown && Object.keys(lead.score_breakdown).length > 0) {
+      try {
+        return `${reason}\n${JSON.stringify(lead.score_breakdown, null, 0)}`;
+      } catch {
+        return reason;
+      }
+    }
+    return reason;
+  }
+
+  openHistoryModal(lead: Lead) {
+    this.historyLead.set(lead);
+    this.historyData.set(null);
+    this.historyError.set(null);
+    this.historyLoading.set(true);
+    this.leadService.getLeadHistory(lead.lead_id).subscribe({
+      next: (d) => {
+        this.historyData.set(d);
+        this.historyLoading.set(false);
+      },
+      error: (err) => {
+        const msg = err?.message || 'Failed to load history';
+        this.historyError.set(msg);
+        this.historyLoading.set(false);
+        this.toast.error(msg);
+      },
+    });
+  }
+
+  closeHistoryModal() {
+    this.historyLead.set(null);
+    this.historyData.set(null);
+    this.historyError.set(null);
+  }
+
+  historyEventsChronological(): LeadHistoryEvent[] {
+    const ev = this.historyData()?.events ?? [];
+    return [...ev].sort((a, b) => {
+      const ta = a.at ? new Date(a.at).getTime() : 0;
+      const tb = b.at ? new Date(b.at).getTime() : 0;
+      return ta - tb;
+    });
+  }
+
+  formatHistoryTime(at?: string): string {
+    if (!at) return '—';
+    try {
+      return new Date(at).toLocaleString();
+    } catch {
+      return at;
+    }
+  }
+
+  formatHistoryType(type?: string): string {
+    if (!type) return 'Event';
+    return type
+      .split('_')
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  formatHistoryPayload(payload: Record<string, unknown> | undefined): string {
+    if (!payload || Object.keys(payload).length === 0) return '—';
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return String(payload);
+    }
   }
 
   clearMessages() {
@@ -509,10 +856,45 @@ export class Leads {
     this.loadLeads();
   }
 
+  toggleShowTerminalLeads() {
+    this.showClosedLeads.update((v) => !v);
+    this.currentPage.set(1);
+    this.loadLeads();
+  }
+
   /** Call when search or filter changes to refetch page 1 from server */
   onFilterOrSearchChange() {
     this.currentPage.set(1);
     this.loadLeads();
+  }
+
+  onLeadStatusChange(leadId: string, value: string) {
+    const v = (value || '').toUpperCase();
+    const allowed = new Set([
+      'NEW',
+      'ASSIGNED',
+      'CONTACTED',
+      'PROPOSAL_SENT',
+      'IN_PROGRESS',
+      'QUALIFIED',
+      'CONVERTED',
+      'NOT_CONVERTED',
+      'CLOSED',
+    ]);
+    if (!allowed.has(v)) return;
+    this.updateLeadStatus(
+      leadId,
+      v as
+        | 'NEW'
+        | 'ASSIGNED'
+        | 'CONTACTED'
+        | 'PROPOSAL_SENT'
+        | 'IN_PROGRESS'
+        | 'QUALIFIED'
+        | 'CONVERTED'
+        | 'NOT_CONVERTED'
+        | 'CLOSED',
+    );
   }
 
   goToPageFromInput() {

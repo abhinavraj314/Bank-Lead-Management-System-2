@@ -10,12 +10,35 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+
+    /**
+     * Generate next user code in format USR_NNNN (e.g., USR_0001, USR_0002)
+     */
+    private String generateUserCode() {
+        var lastUser = userRepository.findTopByOrderByUserCodeDesc();
+        int nextNumber = 1;
+        
+        if (lastUser.isPresent() && lastUser.get().getUserCode() != null) {
+            String lastCode = lastUser.get().getUserCode();
+            try {
+                // Extract number from USR_NNNN format
+                String numPart = lastCode.replaceAll("[^0-9]", "");
+                nextNumber = Integer.parseInt(numPart) + 1;
+            } catch (NumberFormatException e) {
+                nextNumber = 1;
+            }
+        }
+        
+        return String.format("USR_%04d", nextNumber);
+    }
 
     public UserResponse createUser(CreateUserRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -31,6 +54,7 @@ public class UserService {
                 // Hash password before saving
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
+                .userCode(generateUserCode())
                 .accountStatus(User.AccountStatus.ACTIVE)
                 .build();
         User saved = userRepository.save(user);
@@ -39,6 +63,18 @@ public class UserService {
 
     public Page<UserResponse> getUsers(Pageable pageable) {
         return userRepository.findAll(pageable).map(this::toResponse);
+    }
+
+    /**
+     * Get all active users as a list (for dropdowns, team selection, etc.)
+     * Does not include INVITED users.
+     */
+    public List<UserResponse> getAllActiveUsers() {
+        return userRepository.findAll()
+                .stream()
+                .filter(u -> u.getAccountStatus() == User.AccountStatus.ACTIVE)
+                .map(this::toResponse)
+                .toList();
     }
 
     public UserResponse getUserById(String id) {
@@ -105,6 +141,7 @@ public class UserService {
     private UserResponse toResponse(User user) {
         return UserResponse.builder()
                 .id(user.getId())
+                .userCode(user.getUserCode())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .role(user.getRole())

@@ -63,7 +63,9 @@
   padding: 2rem;
   text-align: center;
   background: #f9fafb;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
   position: relative;
   margin-bottom: 1.5rem;
 }
@@ -386,6 +388,23 @@
 .btn-secondary:hover {
   background: #f9fafb;
   border-color: #9ca3af;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+}
+
+.btn-sm {
+  padding: 0.4rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 /* Footer */

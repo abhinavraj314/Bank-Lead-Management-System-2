@@ -709,6 +709,50 @@
   cursor: not-allowed;
 }
 
+.history-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-top: 0.75rem;
+}
+
+.history-event-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  background: #f8fafc;
+  font-size: 0.85rem;
+}
+
+.history-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+}
+
+.history-event-meta span {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.history-actor {
+  color: #475569;
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+}
+
+.history-payload {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: #334155;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 768px) {
   .pagination-section {
     flex-direction: column;

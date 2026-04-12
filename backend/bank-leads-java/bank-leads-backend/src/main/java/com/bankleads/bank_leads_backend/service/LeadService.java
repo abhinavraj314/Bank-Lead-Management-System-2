@@ -2,8 +2,12 @@ package com.bankleads.bank_leads_backend.service;
 
 import com.bankleads.bank_leads_backend.model.Lead;
 import com.bankleads.bank_leads_backend.model.Product;
+import com.bankleads.bank_leads_backend.model.Team;
+import com.bankleads.bank_leads_backend.model.User;
 import com.bankleads.bank_leads_backend.repository.LeadRepository;
 import com.bankleads.bank_leads_backend.repository.ProductRepository;
+import com.bankleads.bank_leads_backend.repository.TeamRepository;
+import com.bankleads.bank_leads_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import com.bankleads.bank_leads_backend.model.LeadEvent;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +34,10 @@ public class LeadService {
     private final CanonicalFieldDeduplicationService canonicalFieldDeduplicationService;
     private final ProductRepository productRepository;
     private final DeduplicationService deduplicationService;
+    private final TeamAssignmentService teamAssignmentService;
+    private final LeadAuditService leadAuditService;
+    private final TeamRepository teamRepository;
+    private final UserRepository userRepository;
     
     public Optional<Lead> findByLeadId(String leadId) {
         return leadRepository.findByLeadId(leadId);
@@ -47,6 +57,11 @@ public class LeadService {
             ensureLeadId(merged);
             assertLeadIdOrThrow(merged);
             Lead saved = leadRepository.save(merged);
+            leadAuditService.append(
+                    saved.getLeadId(),
+                    LeadEvent.EventType.LEAD_MERGED,
+                    null,
+                    Map.of("pId", ctx.getPId(), "sourceId", ctx.getSourceId()));
             return new UpsertResult("merged", saved);
         }
         
@@ -70,7 +85,8 @@ public class LeadService {
                 .employmentType(ctx.employmentType)
                 .loanAmount(ctx.loanAmount)
                 .converted(ctx.converted)
-                .status(Lead.LeadStatus.NEW)  // Default status for new leads
+                .status(Lead.LeadStatus.NEW)
+                .state(Lead.LeadStatus.NEW)
                 .build();
 
         // Defensive fix: guarantee leadId is never null/blank before insert.
@@ -87,6 +103,57 @@ public class LeadService {
         newLead.getMergedFrom().add(initialMerge);
         
         Lead saved = leadRepository.save(newLead);
+        teamAssignmentService.assignIfApplicable(saved);
+        boolean bumpedToAssigned = false;
+        if (saved.getState() == Lead.LeadStatus.NEW
+                && (saved.getAssignedUserId() != null || saved.getTeamId() != null)) {
+            saved.setState(Lead.LeadStatus.ASSIGNED);
+            saved.setStatus(Lead.LeadStatus.ASSIGNED);
+            saved.setStatusUpdatedAt(LocalDateTime.now());
+            bumpedToAssigned = true;
+        }
+        if (saved.getAssignedUserId() != null || saved.getTeamId() != null || bumpedToAssigned) {
+            saved = leadRepository.save(saved);
+        }
+        leadAuditService.append(
+                saved.getLeadId(),
+                LeadEvent.EventType.LEAD_CREATED,
+                null,
+                Map.of("pId", ctx.getPId(), "sourceId", ctx.getSourceId()));
+        if (bumpedToAssigned) {
+            leadAuditService.append(
+                    saved.getLeadId(),
+                    LeadEvent.EventType.STATE_CHANGED,
+                    null,
+                    Map.of("from", Lead.LeadStatus.NEW.name(), "to", Lead.LeadStatus.ASSIGNED.name(), "reason", "auto_route"));
+        }
+        if (saved.getAssignedUserId() != null) {
+            String teamName = "";
+            String userName = "";
+            if (saved.getTeamId() != null) {
+                Team team = teamRepository.findById(saved.getTeamId()).orElse(null);
+                teamName = team != null ? team.getName() : "";
+            }
+            User user = userRepository.findById(saved.getAssignedUserId()).orElse(null);
+            userName = user != null ? (user.getUsername() != null ? user.getUsername() : user.getEmail()) : "";
+            
+            leadAuditService.append(
+                    saved.getLeadId(),
+                    LeadEvent.EventType.ASSIGNMENT_CHANGED,
+                    null,
+                    Map.of(
+                            "toUserId", userName,
+                            "teamId", teamName,
+                            "auto", true));
+        } else if (saved.getTeamId() != null) {
+            Team team = teamRepository.findById(saved.getTeamId()).orElse(null);
+            String teamName = team != null ? team.getName() : "";
+            leadAuditService.append(
+                    saved.getLeadId(),
+                    LeadEvent.EventType.TEAM_ASSIGNED,
+                    null,
+                    Map.of("teamId", teamName));
+        }
         return new UpsertResult("inserted", saved);
     }
 

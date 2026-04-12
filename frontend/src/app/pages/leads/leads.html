@@ -134,7 +134,7 @@
       }
 
       @if (loadingLeads()) {
-        <div class="loading-leads" style="padding: 1.5rem; text-align: center; color: #64748b;">
+        <div class="loading-leads" style="padding: 1.5rem; text-align: center; color: #64748b">
           Loading leads…
         </div>
       }
@@ -167,8 +167,58 @@
               Clear Filters
             </button>
           }
+          <button class="btn btn-primary" type="button" (click)="openCreateLeadModal()">
+            + Add Lead
+          </button>
         </div>
       </div>
+
+      @if (historyLead()) {
+        <div class="modal-overlay" (click)="closeHistoryModal()">
+          <div
+            class="modal-content filter-modal"
+            style="max-width: 640px"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="modal-header">
+              <h2>Lead history — {{ historyLead()!.name || historyLead()!.lead_id }}</h2>
+              <button class="btn-close" type="button" (click)="closeHistoryModal()">×</button>
+            </div>
+            <div class="modal-body">
+              @if (historyLoading()) {
+                <p style="color: #64748b">Loading events…</p>
+              } @else if (historyError()) {
+                <p class="alert alert-error">{{ historyError() }}</p>
+              } @else {
+                <p style="font-size: 0.85rem; color: #64748b; margin-top: 0">
+                  Newest events are stored first on the server; shown below oldest → newest.
+                </p>
+                <div class="history-event-list">
+                  @for (ev of historyEventsChronological(); track ev.id || $index) {
+                    <div class="history-event-row">
+                      <div class="history-event-meta">
+                        <strong>{{ formatHistoryType(ev.type) }}</strong>
+                        <span>{{ formatHistoryTime(ev.at) }}</span>
+                      </div>
+                      @if (ev.actorUserId) {
+                        <div class="history-actor">Actor: {{ ev.actorUserId }}</div>
+                      }
+                      <div class="history-payload">{{ formatHistoryPayload(ev.payload) }}</div>
+                    </div>
+                  } @empty {
+                    <p style="color: #64748b">No events recorded yet.</p>
+                  }
+                </div>
+              }
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" type="button" (click)="closeHistoryModal()">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      }
 
       @if (showFilterModal()) {
         <div class="modal-overlay" (click)="closeFilterModal()">
@@ -181,7 +231,11 @@
             <div class="modal-body">
               <div class="form-group">
                 <label class="form-label">Product</label>
-                <select class="form-select" [ngModel]="draftProductFilter()" (ngModelChange)="draftProductFilter.set($event)">
+                <select
+                  class="form-select"
+                  [ngModel]="draftProductFilter()"
+                  (ngModelChange)="draftProductFilter.set($event)"
+                >
                   <option value="">All Products</option>
                   @for (product of products(); track product.product_id) {
                     <option [value]="product.product_id">{{ product.product_name }}</option>
@@ -191,7 +245,11 @@
 
               <div class="form-group">
                 <label class="form-label">Source</label>
-                <select class="form-select" [ngModel]="draftSourceFilter()" (ngModelChange)="draftSourceFilter.set($event)">
+                <select
+                  class="form-select"
+                  [ngModel]="draftSourceFilter()"
+                  (ngModelChange)="draftSourceFilter.set($event)"
+                >
                   <option value="">All Sources</option>
                   @for (source of sources(); track source.source_id) {
                     <option [value]="source.source_id">{{ source.source_name }}</option>
@@ -201,19 +259,32 @@
 
               <div class="form-group">
                 <label class="form-label">State</label>
-                <select class="form-select" [ngModel]="draftStatusFilter()" (ngModelChange)="draftStatusFilter.set($event)">
+                <select
+                  class="form-select"
+                  [ngModel]="draftStatusFilter()"
+                  (ngModelChange)="draftStatusFilter.set($event)"
+                >
                   <option value="">All States</option>
                   <option value="NEW">New</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="QUALIFIED">Qualified</option>
-                  <option value="CLOSED">Closed</option>
+                  <option value="ASSIGNED">Assigned</option>
+                  <option value="CONTACTED">Contacted</option>
+                  <option value="PROPOSAL_SENT">Proposal sent</option>
+                  <option value="IN_PROGRESS">In progress (legacy)</option>
+                  <option value="QUALIFIED">Qualified (legacy)</option>
+                  <option value="CONVERTED">Converted</option>
+                  <option value="NOT_CONVERTED">Not converted</option>
+                  <option value="CLOSED">Closed (legacy)</option>
                 </select>
               </div>
 
               @if (isAdmin()) {
                 <div class="form-group">
                   <label class="form-label">Assignment</label>
-                  <select class="form-select" [ngModel]="draftAssignedUserFilter()" (ngModelChange)="draftAssignedUserFilter.set($event)">
+                  <select
+                    class="form-select"
+                    [ngModel]="draftAssignedUserFilter()"
+                    (ngModelChange)="draftAssignedUserFilter.set($event)"
+                  >
                     <option value="">All Assignments</option>
                     <option value="unassigned">Unassigned</option>
                     @for (user of users(); track user.id) {
@@ -239,6 +310,210 @@
         </div>
       }
 
+      <!-- Create Lead Modal -->
+      @if (showCreateLeadModal()) {
+        <div class="modal-overlay" (click)="closeCreateLeadModal()">
+          <div
+            class="modal-content filter-modal"
+            style="max-width: 720px"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="modal-header">
+              <h2>Create New Lead</h2>
+              <button class="btn-close" type="button" (click)="closeCreateLeadModal()">×</button>
+            </div>
+
+            <div class="modal-body">
+              @if (creatingleadError()) {
+                <div class="alert alert-error" style="margin-bottom: 1rem">
+                  <div class="alert-title">ERROR</div>
+                  <div class="alert-message">{{ creatingleadError() }}</div>
+                </div>
+              }
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Name <span style="color: #999">(optional)</span></label>
+                  <input
+                    type="text"
+                    class="form-input"
+                    placeholder="John Doe"
+                    [ngModel]="newLeadForm().name"
+                    (ngModelChange)="updateNewLeadForm('name', $event)"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group" style="flex: 2">
+                  <label class="form-label"
+                    >Email
+                    <span style="color: #999">(one of email/phone/aadhar required)</span></label
+                  >
+                  <input
+                    type="email"
+                    class="form-input"
+                    placeholder="john@example.com"
+                    [ngModel]="newLeadForm().email"
+                    (ngModelChange)="updateNewLeadForm('email', $event)"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label"
+                    >Phone <span style="color: #999">(10 digits)</span></label
+                  >
+                  <input
+                    type="text"
+                    class="form-input"
+                    placeholder="9876543210"
+                    [ngModel]="newLeadForm().phoneNumber"
+                    (ngModelChange)="updateNewLeadForm('phoneNumber', $event)"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label"
+                    >Aadhar <span style="color: #999">(12 digits)</span></label
+                  >
+                  <input
+                    type="text"
+                    class="form-input"
+                    placeholder="123456789012"
+                    [ngModel]="newLeadForm().aadharNumber"
+                    (ngModelChange)="updateNewLeadForm('aadharNumber', $event)"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label">Product <span style="color: #cc3333">*</span></label>
+                  <select
+                    class="form-select"
+                    [ngModel]="newLeadForm().pId"
+                    (ngModelChange)="updateNewLeadForm('pId', $event)"
+                    [disabled]="creatingLead()"
+                  >
+                    <option value="">Select Product</option>
+                    @for (product of products(); track product.product_id) {
+                      <option [value]="product.product_id">{{ product.product_name }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label">Source <span style="color: #cc3333">*</span></label>
+                  <select
+                    class="form-select"
+                    [ngModel]="newLeadForm().sourceId"
+                    (ngModelChange)="updateNewLeadForm('sourceId', $event)"
+                    [disabled]="creatingLead() || !newLeadForm().pId"
+                  >
+                    <option value="">Select Source</option>
+                    @for (source of sourcesForModalProduct(); track source.source_id) {
+                      <option [value]="source.source_id">{{ source.source_name }}</option>
+                    }
+                  </select>
+                </div>
+              </div>
+
+              <h3
+                style="
+                  margin-top: 1.5rem;
+                  margin-bottom: 0.75rem;
+                  color: #1e293b;
+                  font-size: 0.9rem;
+                  font-weight: 600;
+                "
+              >
+                Lead Enrichment (Optional)
+              </h3>
+              <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem">
+                Provide additional information to improve lead scoring accuracy
+              </p>
+
+              <div class="form-row">
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label">Monthly Income</label>
+                  <input
+                    type="number"
+                    class="form-input"
+                    placeholder="50000"
+                    [ngModel]="newLeadForm().income"
+                    (ngModelChange)="updateNewLeadForm('income', parseNumberInput($event))"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label"
+                    >Credit Score <span style="color: #999">(550-850)</span></label
+                  >
+                  <input
+                    type="number"
+                    class="form-input"
+                    placeholder="750"
+                    [ngModel]="newLeadForm().creditScore"
+                    (ngModelChange)="updateNewLeadForm('creditScore', parseNumberInput($event))"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label">Employment Type</label>
+                  <select
+                    class="form-select"
+                    [ngModel]="newLeadForm().employmentType"
+                    (ngModelChange)="updateNewLeadForm('employmentType', $event)"
+                    [disabled]="creatingLead()"
+                  >
+                    <option value="">Not Specified</option>
+                    <option value="SALARIED">Salaried</option>
+                    <option value="SELF_EMPLOYED">Self Employed</option>
+                  </select>
+                </div>
+                <div class="form-group" style="flex: 1">
+                  <label class="form-label">Requested Loan Amount</label>
+                  <input
+                    type="number"
+                    class="form-input"
+                    placeholder="500000"
+                    [ngModel]="newLeadForm().loanAmount"
+                    (ngModelChange)="updateNewLeadForm('loanAmount', parseNumberInput($event))"
+                    [disabled]="creatingLead()"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button
+                class="btn btn-secondary"
+                type="button"
+                (click)="closeCreateLeadModal()"
+                [disabled]="creatingLead()"
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary"
+                type="button"
+                (click)="submitCreateLead()"
+                [disabled]="creatingLead()"
+              >
+                {{ creatingLead() ? 'Creating...' : 'Create & Score Lead' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
       <div class="sort-controls">
         <div class="list-controls">
           <button
@@ -253,10 +528,10 @@
         <button
           class="btn btn-ghost"
           type="button"
-          (click)="showClosedLeads.set(!showClosedLeads())"
+          (click)="toggleShowTerminalLeads()"
           [attr.aria-pressed]="showClosedLeads()"
         >
-          {{ showClosedLeads() ? 'Hide Closed Leads' : 'Show Closed Leads' }}
+          {{ showClosedLeads() ? 'Hide won / lost / closed' : 'Show won / lost / closed' }}
         </button>
       </div>
 
@@ -278,6 +553,7 @@
                 }
               </th>
               <th>Date Added</th>
+              <th>History</th>
             </tr>
           </thead>
 
@@ -292,11 +568,11 @@
                 <td>
                   <select
                     class="status-select"
-                    [ngModel]="lead.status || 'NEW'"
-                    [disabled]="updatingLeadId() === lead.lead_id || lead.status === 'CLOSED'"
-                    (ngModelChange)="updateLeadStatus(lead.lead_id, $event)"
+                    [ngModel]="(lead.status || 'NEW').toString().toUpperCase()"
+                    [disabled]="statusSelectDisabled(lead)"
+                    (ngModelChange)="onLeadStatusChange(lead.lead_id, $event)"
                   >
-                    @for (opt of getStatusOptions(); track opt.value) {
+                    @for (opt of getStatusOptionsForLead(lead); track opt.value) {
                       <option [value]="opt.value">{{ opt.label }}</option>
                     }
                   </select>
@@ -306,7 +582,7 @@
                     <select
                       class="assignment-select"
                       [ngModel]="lead.assigned_user_id || ''"
-                      [disabled]="updatingLeadId() === lead.lead_id || lead.status === 'CLOSED'"
+                      [disabled]="assignmentRowDisabled(lead)"
                       (ngModelChange)="updateLeadAssignment(lead.lead_id, $event || null)"
                     >
                       <option value="">Unassigned</option>
@@ -315,7 +591,7 @@
                       }
                     </select>
                   } @else {
-                    @if (lead.status === 'CLOSED') {
+                    @if (isTerminalState(lead.status)) {
                       {{ lead.assigned_user_name || 'Unassigned' }}
                     } @else if (lead.assigned_user_name) {
                       {{ lead.assigned_user_name }}
@@ -331,16 +607,28 @@
                   }
                 </td>
                 <td>
-                  <span class="score-badge" [ngClass]="getScoreClass(lead.lead_score)"
-                    [title]="lead.score_reason || 'Not scored'">
+                  <span
+                    class="score-badge"
+                    [ngClass]="getScoreClass(lead.lead_score)"
+                    [title]="getScoreTitle(lead)"
+                  >
                     {{ formatScore(lead.lead_score) }}
                   </span>
                 </td>
                 <td>{{ lead.created_at || '-' }}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    (click)="openHistoryModal(lead)"
+                  >
+                    View
+                  </button>
+                </td>
               </tr>
             } @empty {
               <tr>
-                <td colspan="9" class="empty-state">
+                <td colspan="10" class="empty-state">
                   @if (!loadingLeads() && totalLeads() === 0) {
                     No leads found. Upload a file to get started.
                   } @else if (!loadingLeads()) {
@@ -356,12 +644,16 @@
       <!-- Pagination Controls -->
       <div class="pagination-section">
         <div class="pagination-info">
-          <span
-            >Showing {{ (currentPage() - 1) * pageSize() + 1 }}-{{
-              Math.min(currentPage() * pageSize(), filteredTotal())
-            }}
-            of {{ filteredTotal() }} leads</span
-          >
+          <span>
+            @if (filteredTotal() === 0) {
+              0 leads
+            } @else {
+              Showing {{ (currentPage() - 1) * pageSize() + 1 }}-{{
+                Math.min(currentPage() * pageSize(), filteredTotal())
+              }}
+              of {{ filteredTotal() }} leads
+            }
+          </span>
           <div class="page-size-selector">
             <label>Rows per page:</label>
             <select
@@ -398,8 +690,11 @@
                 {{ p }}
               </button>
             }
-            @if (totalPages() > 4) {
-              <span class="page-ellipsis">…</span>
+            @if (
+              visiblePageNumbers().length > 0 &&
+              visiblePageNumbers()[visiblePageNumbers().length - 1] < totalPages()
+            ) {
+              <span class="page-ellipsis">… {{ totalPages() }}</span>
             }
           </div>
 
@@ -411,15 +706,13 @@
               [min]="1"
               [max]="totalPages()"
               [value]="jumpToPageInput() ?? ''"
-              (input)="jumpToPageInput.set($any($event.target).value ? +$any($event.target).value : null)"
+              (input)="
+                jumpToPageInput.set($any($event.target).value ? +$any($event.target).value : null)
+              "
               (keyup.enter)="goToPageFromInput()"
               placeholder=""
             />
-            <button
-              class="btn btn-secondary btn-sm"
-              type="button"
-              (click)="goToPageFromInput()"
-            >
+            <button class="btn btn-secondary btn-sm" type="button" (click)="goToPageFromInput()">
               Go
             </button>
           </div>

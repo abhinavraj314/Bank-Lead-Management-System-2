@@ -105,6 +105,20 @@ public class UserController {
         return ResponseUtil.success(users, "Users retrieved successfully");
     }
 
+    /**
+     * Get all active users as a simple list (for dropdowns, team selection, etc.)
+     * Does not include INVITED users, no pagination.
+     */
+    @GetMapping("/list/all")
+    public ResponseEntity<ApiResponse<java.util.List<UserResponse>>> getAllActiveUsers() {
+        try {
+            java.util.List<UserResponse> users = userService.getAllActiveUsers();
+            return ResponseUtil.success(users, "Active users retrieved successfully");
+        } catch (Exception e) {
+            return ResponseUtil.error("Failed to retrieve users: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<UserResponse>> getUserById(@PathVariable String id) {
         try {

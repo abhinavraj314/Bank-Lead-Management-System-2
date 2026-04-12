@@ -31,9 +31,7 @@
         </tr>
         @if (products().length === 0) {
           <tr>
-            <td [attr.colspan]="isAdmin() ? 3 : 2" class="empty-state">
-              No products found.
-            </td>
+            <td [attr.colspan]="isAdmin() ? 3 : 2" class="empty-state">No products found.</td>
           </tr>
         }
       </tbody>
@@ -71,6 +69,22 @@
               placeholder="e.g., Personal Loan, Home Loan"
               [disabled]="isCreating()"
             />
+          </div>
+          <div class="form-group">
+            <label>Team <span style="color: red">*</span></label>
+            <select
+              [(ngModel)]="newProductTeamId"
+              [disabled]="isCreating()"
+              class="team-select-focus"
+            >
+              <option value="">-- Select a team --</option>
+              @for (team of teams(); track team.id) {
+                <option [value]="team.id">{{ team.name }}</option>
+              }
+            </select>
+            <p style="font-size: 0.8rem; color: #666; margin-top: 0.25rem; margin-bottom: 0">
+              Products are assigned to teams for lead routing.
+            </p>
           </div>
         </div>
         <div class="modal-footer">

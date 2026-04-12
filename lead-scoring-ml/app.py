@@ -183,15 +183,39 @@ def predict():
     if not leads:
         return jsonify({"predictions": []})
 
-    rows = [extract_features_from_lead(lead) for lead in leads]
-    X = pd.DataFrame(rows, columns=FEATURE_NAMES)
-    probs = model.predict(X)
+    rows = []
+    canonical_fields_per_lead = []
+    
+    for lead in leads:
+        # Extract all 16 features
+        all_features = extract_features_from_lead(lead)
+        
+        # Get canonical fields for this lead (optional) - if not provided, use all
+        canonical_fields = lead.get("canonicalFields")
+        if canonical_fields is None:
+            # Use all features if not specified
+            canonical_fields = FEATURE_NAMES
+        else:
+            # Ensure it's a list
+            if not isinstance(canonical_fields, list):
+                canonical_fields = list(canonical_fields)
+        
+        canonical_fields_per_lead.append(canonical_fields)
+        rows.append(all_features)
+    
+    # Create DataFrame with all features
+    X_all = pd.DataFrame(rows, columns=FEATURE_NAMES)
+    
+    # For prediction, use all features (the model was trained on all 16)
+    # But we store which features were "selected" for reference/audit
+    probs = model.predict(X_all)
 
     predictions = []
-    for lead, prob in zip(leads, probs):
+    for i, (lead, prob) in enumerate(zip(leads, probs)):
         predictions.append({
             "leadId": lead.get("leadId") or lead.get("lead_id"),
             "probability": round(float(prob), 6),
+            "featuresUsed": canonical_fields_per_lead[i],  # Echo back which features were used
         })
 
     return jsonify({"predictions": predictions})

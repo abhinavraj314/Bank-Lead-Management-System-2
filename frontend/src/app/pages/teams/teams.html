@@ -1,0 +1,297 @@
+<div class="teams-page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Teams &amp; routing</h1>
+      <p class="page-description">
+        Define sales teams and ordered assignment rules. New leads are matched by product/source and
+        assigned round-robin within the team.
+      </p>
+    </div>
+  </div>
+
+  @if (!isAdmin()) {
+    <div class="alert alert-error">Access denied.</div>
+  } @else {
+    @if (loading()) {
+      <p class="muted">Loading…</p>
+    }
+
+    <!-- ==================== CREATE TEAM MODAL ==================== -->
+    @if (showCreateTeamModal()) {
+      <div class="modal-overlay" (click)="closeCreateTeamModal()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2 class="modal-title">Create New Team</h2>
+            <button class="modal-close" (click)="closeCreateTeamModal()" type="button">
+              &times;
+            </button>
+          </div>
+
+          <div class="modal-body">
+            <!-- Team Name -->
+            <div class="form-group">
+              <label class="form-label">Team Name</label>
+              <input
+                type="text"
+                class="input"
+                [(ngModel)]="newTeamName"
+                name="newTeamName"
+                placeholder="e.g. Retail inbound"
+              />
+            </div>
+
+            <!-- Team Admin (Required) -->
+            <div class="form-group">
+              <label class="form-label required">Team Admin</label>
+              <select class="input" [(ngModel)]="newTeamAdminUserId" name="newTeamAdminUserId">
+                <option value="">-- Select administrator --</option>
+                @for (user of users(); track user.id) {
+                  <option [value]="user.id">
+                    {{ user.userCode || 'N/A' }} - {{ user.username }}
+                  </option>
+                }
+              </select>
+              <p class="form-hint">Every team must have an administrator.</p>
+            </div>
+
+            <!-- Team Members (Optional, Multi-select)-->
+            <div class="form-group">
+              <label class="form-label">Team Members (optional)</label>
+              <p class="form-hint">
+                Select team members now or add them later. Members can be round-robin assigned new
+                leads.
+              </p>
+
+              @if (users().length === 0) {
+                <p class="muted">No users available. Create users first.</p>
+              } @else {
+                <div class="user-checkbox-grid">
+                  @for (user of users(); track user.id) {
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        [checked]="isUserSelected(user.id)"
+                        (change)="toggleMember(user.id)"
+                      />
+                      <span class="checkbox-text"
+                        >{{ user.userCode || 'N/A' }} - {{ user.username }}</span
+                      >
+                    </label>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" (click)="closeCreateTeamModal()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              (click)="createTeam()"
+              [disabled]="savingTeamId() === 'new'"
+            >
+              {{ savingTeamId() === 'new' ? 'Creating…' : 'Create team' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- ==================== TEAMS SECTION ==================== -->
+    <div class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Teams</h2>
+          <p class="section-subtitle">
+            Click "Create team" to add a new team with an admin and optional members.
+          </p>
+        </div>
+        <button type="button" class="btn btn-primary" (click)="openCreateTeamModal()">
+          + Create team
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Admin</th>
+              <th>Members</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of teamRows(); track row.id || $index) {
+              <tr>
+                <!-- Team Name -->
+                <td>
+                  <input
+                    type="text"
+                    class="input input-table"
+                    [(ngModel)]="row.name"
+                    [ngModelOptions]="{ standalone: true }"
+                  />
+                </td>
+
+                <!-- Team Admin -->
+                <td>
+                  <select
+                    class="input input-table"
+                    [(ngModel)]="row.adminUserId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Select admin</option>
+                    @for (user of users(); track user.id) {
+                      <option [value]="user.id">
+                        {{ user.userCode || 'N/A' }} - {{ user.username }}
+                      </option>
+                    }
+                  </select>
+                </td>
+
+                <!-- Team Members (comma-separated, editable) -->
+                <td>
+                  <input
+                    type="text"
+                    class="input input-table"
+                    [(ngModel)]="row.memberIdsText"
+                    [ngModelOptions]="{ standalone: true }"
+                    placeholder="comma-separated user codes (e.g., USR_0001, USR_0002)"
+                  />
+                </td>
+
+                <!-- Actions -->
+                <td class="cell-actions">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    (click)="saveTeamRow(row)"
+                    [disabled]="!row.id || savingTeamId() === row.id"
+                  >
+                    {{ row.id && savingTeamId() === row.id ? 'Saving…' : 'Save' }}
+                  </button>
+                  @if (row.id) {
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-danger"
+                      (click)="deleteTeam(row.id)"
+                    >
+                      Delete
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="4" class="muted">No teams yet. Click "Create team" to add one.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h2 class="section-title">Assignment rules</h2>
+      <p class="section-subtitle">
+        Lower priority number runs first. Leave product or source empty to match any. First matching
+        rule assigns the lead’s team (and round-robin user).
+      </p>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Product</th>
+              <th>Source</th>
+              <th>Team</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (rule of ruleRows(); track $index) {
+              <tr>
+                <td>
+                  <input
+                    type="number"
+                    class="input input-narrow"
+                    [(ngModel)]="rule.priority"
+                    [ngModelOptions]="{ standalone: true }"
+                  />
+                </td>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="rule.productId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Any product</option>
+                    @for (p of products(); track p.product_id) {
+                      <option [value]="p.product_id">{{ p.product_name }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="rule.sourceId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Any source</option>
+                    @for (s of sourcesForProduct(rule.productId); track s.source_id) {
+                      <option [value]="s.source_id">{{ s.source_name }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="rule.teamId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Select team</option>
+                    @for (t of teams(); track t.id) {
+                      <option [value]="t.id">{{ t.name }} ({{ t.id }})</option>
+                    }
+                  </select>
+                </td>
+                <td class="cell-actions">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    (click)="removeRuleRow($index)"
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="muted">
+                  No rules — new leads will not auto-route to a team.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rules-footer">
+        <button type="button" class="btn btn-primary" (click)="addRuleRow()">+ Add rule</button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="saveRules()"
+          [disabled]="savingRules()"
+        >
+          {{ savingRules() ? 'Saving…' : 'Save all rules' }}
+        </button>
+      </div>
+    </div>
+  }
+</div>

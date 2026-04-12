@@ -1,6 +1,13 @@
 import { Injectable } from '@angular/core';
 import { Observable, map, catchError, throwError, of } from 'rxjs';
-import { Lead, BackendLead, ApiResponse, Page, UploadResponse } from '../models/lead.models';
+import {
+  Lead,
+  BackendLead,
+  ApiResponse,
+  Page,
+  UploadResponse,
+  LeadHistoryData,
+} from '../models/lead.models';
 import { ApiService } from './api.service';
 import { ProductService } from './product.service';
 import { SourceService } from './source.service';
@@ -16,7 +23,7 @@ export class LeadService {
   ) {}
 
   /**
-   * Get leads from Spring Boot backend. Uses limit=10000 by default to fetch all leads.
+   * Get leads (server-side page, filters, sort). Default page size 25.
    */
   getLeads(params?: {
     page?: number;
@@ -27,9 +34,12 @@ export class LeadService {
     status?: string;
     assigned_user_id?: string;
     assigned_to_me?: boolean;
+    hide_terminal?: boolean;
+    sort?: string;
+    order?: string;
   }): Observable<{ leads: Lead[]; total: number }> {
     const page = params?.page ?? 1;
-    const limit = params?.limit ?? 10000;
+    const limit = params?.limit ?? 25;
     let url = `/leads?page=${page}&limit=${limit}`;
     if (params?.p_id) url += `&p_id=${encodeURIComponent(params.p_id)}`;
     if (params?.source_id) url += `&source_id=${encodeURIComponent(params.source_id)}`;
@@ -38,6 +48,9 @@ export class LeadService {
     if (params?.assigned_user_id)
       url += `&assigned_user_id=${encodeURIComponent(params.assigned_user_id)}`;
     if (params?.assigned_to_me) url += `&assigned_to_me=true`;
+    if (params?.hide_terminal) url += `&hide_terminal=true`;
+    if (params?.sort) url += `&sort=${encodeURIComponent(params.sort)}`;
+    if (params?.order) url += `&order=${encodeURIComponent(params.order)}`;
     return this.apiService.get<ApiResponse<Page<any>>>(url).pipe(
       map((response) => {
         if (!response.success) {
@@ -70,7 +83,8 @@ export class LeadService {
               source_id: lead.sourceId ?? lead['source_id'] ?? '',
               source_name: lead.sourceName ?? lead['source_name'] ?? '',
               // Support status, state (state is used in the user's data)
-              status: ((lead.status ?? lead.state ?? '').toString().toUpperCase() || 'NEW') as Lead['status'],
+              status: ((lead.status ?? lead.state ?? '').toString().toUpperCase() ||
+                'NEW') as Lead['status'],
               created_at: this.formatDate(lead.createdAt ?? lead['created_at']),
               lead_score:
                 lead.leadScore != null
@@ -81,6 +95,10 @@ export class LeadService {
               score_reason: lead.scoreReason ?? lead['score_reason'] ?? null,
               assigned_user_id: lead.assignedUserId ?? lead['assigned_user_id'] ?? null,
               assigned_user_name: lead.assignedUserName ?? lead['assigned_user_name'] ?? null,
+              allowed_next_states:
+                lead.allowedNextStates ?? lead['allowed_next_states'] ?? undefined,
+              team_id: lead.teamId ?? lead['team_id'] ?? null,
+              score_breakdown: lead.scoreBreakdown ?? lead['score_breakdown'] ?? null,
             };
           } catch {
             return {
@@ -98,6 +116,9 @@ export class LeadService {
               score_reason: null,
               assigned_user_id: null,
               assigned_user_name: null,
+              allowed_next_states: undefined,
+              team_id: null,
+              score_breakdown: null,
             };
           }
         });
@@ -179,12 +200,34 @@ export class LeadService {
       );
   }
 
+  getLeadHistory(leadId: string, page = 0, size = 100): Observable<LeadHistoryData> {
+    return this.apiService
+      .get<ApiResponse<LeadHistoryData>>(`/leads/${leadId}/history?page=${page}&size=${size}`)
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            throw new Error(response.message || 'Failed to load lead history');
+          }
+          return response.data;
+        }),
+      );
+  }
+
   /**
    * Update lead status (lifecycle state)
    */
   updateLeadStatus(
     leadId: string,
-    status: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED',
+    status:
+      | 'NEW'
+      | 'ASSIGNED'
+      | 'CONTACTED'
+      | 'PROPOSAL_SENT'
+      | 'IN_PROGRESS'
+      | 'QUALIFIED'
+      | 'CONVERTED'
+      | 'NOT_CONVERTED'
+      | 'CLOSED',
   ): Observable<Lead> {
     return this.apiService
       .patch<ApiResponse<BackendLead>>(`/leads/${leadId}/state`, { status })
@@ -236,7 +279,16 @@ export class LeadService {
   updateLead(
     leadId: string,
     updates: {
-      status?: 'NEW' | 'IN_PROGRESS' | 'QUALIFIED' | 'CLOSED';
+      status?:
+        | 'NEW'
+        | 'ASSIGNED'
+        | 'CONTACTED'
+        | 'PROPOSAL_SENT'
+        | 'IN_PROGRESS'
+        | 'QUALIFIED'
+        | 'CONVERTED'
+        | 'NOT_CONVERTED'
+        | 'CLOSED';
       assignedUserId?: string | null;
     },
   ): Observable<Lead> {
@@ -244,6 +296,31 @@ export class LeadService {
       map((response) => {
         if (!response.success || !response.data) {
           throw new Error(response.message || 'Failed to update lead');
+        }
+        return this.mapBackendLeadToLead(response.data);
+      }),
+    );
+  }
+
+  /**
+   * Create a new lead (individual creation, supports enriched data)
+   */
+  createLead(request: {
+    name?: string;
+    email?: string;
+    phoneNumber?: string;
+    aadharNumber?: string;
+    pId: string;
+    sourceId: string;
+    income?: number | null;
+    creditScore?: number | null;
+    employmentType?: 'SALARIED' | 'SELF_EMPLOYED';
+    loanAmount?: number | null;
+  }): Observable<Lead> {
+    return this.apiService.post<ApiResponse<BackendLead>>('/leads', request).pipe(
+      map((response) => {
+        if (!response.success || !response.data) {
+          throw new Error(response.message || 'Failed to create lead');
         }
         return this.mapBackendLeadToLead(response.data);
       }),
@@ -267,7 +344,8 @@ export class LeadService {
       source_id: lead.sourceId ?? lead['source_id'] ?? '',
       source_name: lead['sourceName'] ?? lead['source_name'] ?? '',
       // Support status, state
-      status: ((lead.status ?? lead['state'] ?? '').toString().toUpperCase() || 'NEW') as Lead['status'],
+      status: ((lead.status ?? lead['state'] ?? '').toString().toUpperCase() ||
+        'NEW') as Lead['status'],
       created_at: this.formatDate(lead.createdAt ?? lead['created_at']),
       lead_score:
         lead.leadScore != null
@@ -278,6 +356,9 @@ export class LeadService {
       score_reason: lead.scoreReason ?? lead['score_reason'] ?? null,
       assigned_user_id: lead.assignedUserId ?? lead['assigned_user_id'] ?? null,
       assigned_user_name: lead.assignedUserName ?? lead['assigned_user_name'] ?? null,
+      allowed_next_states: lead.allowedNextStates ?? lead['allowed_next_states'] ?? undefined,
+      team_id: lead.teamId ?? lead['team_id'] ?? null,
+      score_breakdown: lead.scoreBreakdown ?? lead['score_breakdown'] ?? null,
     };
   }
 

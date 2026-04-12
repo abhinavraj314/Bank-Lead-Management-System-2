@@ -12,7 +12,6 @@ import java.util.List;
 public class CreateSourceRequest {
     
     @JsonProperty("s_id")
-    @NotBlank(message = "Source ID is required")
     @Size(min = 2, max = 20, message = "Source ID must be between 2 and 20 characters")
     @Pattern(regexp = "^[A-Z0-9_]+$", message = "Source ID must contain only uppercase letters, numbers, and underscores")
     private String sId;

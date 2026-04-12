@@ -3,8 +3,11 @@ package com.bankleads.bank_leads_backend.controller;
 import com.bankleads.bank_leads_backend.dto.request.CreateProductRequest;
 import com.bankleads.bank_leads_backend.dto.response.ApiResponse;
 import com.bankleads.bank_leads_backend.model.Product;
+import com.bankleads.bank_leads_backend.model.ProductRankingProfile;
+import com.bankleads.bank_leads_backend.repository.ProductRankingProfileRepository;
 import com.bankleads.bank_leads_backend.repository.ProductRepository;
 import com.bankleads.bank_leads_backend.repository.SourceRepository;
+import com.bankleads.bank_leads_backend.repository.TeamRepository;
 import com.bankleads.bank_leads_backend.util.ResponseUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -31,6 +35,8 @@ public class ProductController {
     
     private final ProductRepository productRepository;
     private final SourceRepository sourceRepository;
+    private final ProductRankingProfileRepository productRankingProfileRepository;
+    private final TeamRepository teamRepository;
     
     // ✅ NEW - Simple test endpoint
     @GetMapping("/test")
@@ -64,6 +70,17 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<Product>> createProduct(@Valid @RequestBody CreateProductRequest request) {
+        // Validate team exists
+        String teamId = request.getTeamId();
+        if (teamId == null || teamId.trim().isEmpty()) {
+            return ResponseUtil.error("Team ID is required", HttpStatus.BAD_REQUEST);
+        }
+        
+        teamId = teamId.trim();
+        if (!teamRepository.existsById(teamId)) {
+            return ResponseUtil.error("Team not found: " + teamId, HttpStatus.BAD_REQUEST);
+        }
+        
         String providedPId = request.getPId();
         String pId = (providedPId == null || providedPId.trim().isEmpty())
                 ? generateUniqueProductId()
@@ -81,6 +98,7 @@ public class ProductController {
         Product product = Product.builder()
                 .pId(pId)
                 .pName(request.getPName())
+                .teamId(teamId)
                 .deduplicationFields(request.getDeduplicationFields() != null ? request.getDeduplicationFields() : new java.util.ArrayList<>())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -147,6 +165,47 @@ public class ProductController {
         }
     }
     
+    @GetMapping("/{id}/ranking-profile")
+    public ResponseEntity<ApiResponse<ProductRankingProfile>> getRankingProfile(@PathVariable String id) {
+        String pId = id.toUpperCase();
+        if (!productRepository.existsByPId(pId)) {
+            return ResponseUtil.error("Product with p_id '" + id + "' not found", HttpStatus.NOT_FOUND);
+        }
+        ProductRankingProfile profile = productRankingProfileRepository.findByPId(pId)
+                .orElse(ProductRankingProfile.builder()
+                        .pId(pId)
+                        .rules(new ArrayList<>())
+                        .updatedAt(null)
+                        .build());
+        return ResponseUtil.success(profile);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/{id}/ranking-profile")
+    public ResponseEntity<ApiResponse<ProductRankingProfile>> saveRankingProfile(
+            @PathVariable String id,
+            @RequestBody ProductRankingProfile body) {
+        String pId = id.toUpperCase();
+        if (!productRepository.existsByPId(pId)) {
+            return ResponseUtil.error("Product with p_id '" + id + "' not found", HttpStatus.NOT_FOUND);
+        }
+        ProductRankingProfile existing = productRankingProfileRepository.findByPId(pId).orElse(null);
+        ProductRankingProfile toSave;
+        if (existing != null) {
+            existing.setRules(body.getRules() != null ? body.getRules() : new ArrayList<>());
+            existing.setUpdatedAt(LocalDateTime.now());
+            toSave = existing;
+        } else {
+            toSave = ProductRankingProfile.builder()
+                    .pId(pId)
+                    .rules(body.getRules() != null ? body.getRules() : new ArrayList<>())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+        }
+        ProductRankingProfile saved = productRankingProfileRepository.save(toSave);
+        return ResponseUtil.success(saved, "Ranking profile saved");
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<Product>> getProductById(@PathVariable String id) {
         return productRepository.findByPId(id.toUpperCase())

@@ -9,7 +9,9 @@
   >
     <div class="scoring-modal-box" (click)="$event.stopPropagation()">
       <p class="scoring-modal-message">Scoring all leads, this may take a while.</p>
-      <p class="scoring-modal-hint">You can click outside to close this message. Scoring will continue in the background.</p>
+      <p class="scoring-modal-hint">
+        You can click outside to close this message. Scoring will continue in the background.
+      </p>
     </div>
   </div>
 }
@@ -17,7 +19,9 @@
 <div class="ranking-config-page" *ngIf="isAdmin()">
   <div class="page-header">
     <h1 class="page-title">Lead Ranking & ML Scoring</h1>
-    <p class="page-description">Manage ML-based lead scoring to rank leads by conversion probability</p>
+    <p class="page-description">
+      Manage ML-based lead scoring to rank leads by conversion probability
+    </p>
   </div>
 
   <div class="config-cards-row">
@@ -25,7 +29,11 @@
     <div class="content-card">
       <div class="card-header">
         <h2 class="card-title">ML Service Status</h2>
-        <button class="btn btn-sm btn-secondary" (click)="checkMlStatus()" [disabled]="isCheckingStatus()">
+        <button
+          class="btn btn-sm btn-secondary"
+          (click)="checkMlStatus()"
+          [disabled]="isCheckingStatus()"
+        >
           {{ isCheckingStatus() ? 'Checking...' : '↻ Refresh' }}
         </button>
       </div>
@@ -34,7 +42,10 @@
         <div class="status-item">
           <span class="status-label">Service</span>
           <span class="status-value">
-            <span class="status-dot" [ngClass]="mlServiceAvailable() ? 'dot-green' : 'dot-red'"></span>
+            <span
+              class="status-dot"
+              [ngClass]="mlServiceAvailable() ? 'dot-green' : 'dot-red'"
+            ></span>
             {{ mlServiceAvailable() ? 'Connected' : 'Disconnected' }}
           </span>
         </div>
@@ -45,8 +56,8 @@
       </div>
 
       <div *ngIf="!mlServiceAvailable() && !isCheckingStatus()" class="alert alert-warning">
-        <strong>ML service not available.</strong> Scoring will use the heuristic fallback.
-        Start the Python ML service:
+        <strong>ML service not available.</strong> Scoring will use the heuristic fallback. Start
+        the Python ML service:
         <code>cd lead-scoring-ml && python app.py</code>
       </div>
     </div>
@@ -57,69 +68,92 @@
         <h2 class="card-title">Batch Score All Leads</h2>
       </div>
       <p class="card-description">
-        Score all leads in the database using the ML model. Leads will be ranked by their conversion probability.
-        {{ mlServiceAvailable() ? 'Using LightGBM ML model.' : 'ML service offline — will use heuristic fallback.' }}
+        Score all leads in the database using the ML model. Leads will be ranked by their conversion
+        probability.
+        {{
+          mlServiceAvailable()
+            ? 'Using LightGBM ML model.'
+            : 'ML service offline — will use heuristic fallback.'
+        }}
       </p>
 
-      <button
-        class="btn btn-primary btn-lg"
-        (click)="scoreAllLeads()"
-        [disabled]="isScoring()"
-      >
+      <button class="btn btn-primary btn-lg" (click)="scoreAllLeads()" [disabled]="isScoring()">
         {{ isScoring() ? '⏳ Scoring in progress...' : '🚀 Score All Leads' }}
       </button>
 
-      <div *ngIf="scoringResult()" class="alert alert-success" style="margin-top: 1.25rem;">
-        ✅ Scoring complete! {{ scoringResult()!.scoredCount }} of {{ scoringResult()!.totalLeads }} leads scored.
-        View ranked leads on the <strong>Leads</strong> page and click <strong>"Rank by Score"</strong>.
+      <div *ngIf="scoringResult()" class="alert alert-success" style="margin-top: 1.25rem">
+        ✅ Scoring complete! {{ scoringResult()!.scoredCount }} of
+        {{ scoringResult()!.totalLeads }} leads scored. View ranked leads on the
+        <strong>Leads</strong> page and click <strong>"Rank by Score"</strong>.
       </div>
 
-      <div *ngIf="scoringError()" class="alert alert-error" style="margin-top: 1.25rem;">
+      <div *ngIf="scoringError()" class="alert alert-error" style="margin-top: 1.25rem">
         ❌ {{ scoringError() }}
       </div>
     </div>
   </div>
-  <!-- Training Instructions 
-   
-  <div class="content-card">
+
+  <div class="content-card ranking-config-card">
     <div class="card-header">
-      <h2 class="card-title">How to Train the ML Model</h2>
+      <h2 class="card-title">Canonical Fields Configuration</h2>
     </div>
-    <div class="instructions">
-      <div class="step">
-        <span class="step-number">1</span>
-        <div class="step-content">
-          <strong>Install dependencies</strong>
-          <code>cd lead-scoring-ml && pip install -r requirements.txt</code>
-        </div>
-      </div>
-      <div class="step">
-        <span class="step-number">2</span>
-        <div class="step-content">
-          <strong>Train the model</strong> (from MongoDB)
-          <code>python train.py --target-column converted</code>
-          <span class="step-hint">Set MONGODB_URI env var to your MongoDB connection string</span>
-        </div>
-      </div>
-      <div class="step">
-        <span class="step-number">3</span>
-        <div class="step-content">
-          <strong>Start the scoring service</strong>
-          <code>python app.py</code>
-          <span class="step-hint">Runs on port 5001 by default</span>
-        </div>
-      </div>
-      <div class="step">
-        <span class="step-number">4</span>
-        <div class="step-content">
-          <strong>Score your leads</strong>
-          <span class="step-hint">Click "Score All Leads" above, then view ranked leads on the Leads page</span>
-        </div>
-      </div>
+    <p class="card-description">
+      Select which ML features to use for ranking leads in each product. The model will use the
+      selected features to generate conversion probability scores.
+    </p>
+
+    <div class="form-row ranking-product-row">
+      <label class="form-label" for="configProductSelect">Product</label>
+      <select
+        id="configProductSelect"
+        class="form-select"
+        [ngModel]="selectedConfigProduct()"
+        (ngModelChange)="onProductChange($event)"
+      >
+        <option value="">Select a product</option>
+        @for (p of products(); track p.product_id) {
+          <option [value]="p.product_id">{{ p.product_name }} ({{ p.product_id }})</option>
+        }
+      </select>
+      @if (profileUpdatedAt()) {
+        <span class="profile-updated-hint">Last updated: {{ profileUpdatedAt() }}</span>
+      }
     </div>
+
+    @if (loadingProfile()) {
+      <p class="muted">Loading configuration…</p>
+    } @else if (selectedConfigProduct()) {
+      <p class="fields-help muted">
+        Select the financial and behavioral features that impact lead conversion probability for
+        this product.
+      </p>
+
+      <div class="fields-grid">
+        @for (field of mlCanonicalFields; track field.value) {
+          <label class="field-checkbox">
+            <input
+              type="checkbox"
+              [checked]="isFieldSelected(field.value)"
+              (change)="toggleCanonicalField(field.value)"
+            />
+            <span class="field-label">{{ field.label }}</span>
+          </label>
+        }
+      </div>
+
+      <div class="config-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="saveProfile()"
+          [disabled]="savingProfile()"
+        >
+          {{ savingProfile() ? 'Saving…' : 'Save Configuration' }}
+        </button>
+      </div>
+    }
   </div>
 </div>
--->
 
 <div
   class="ranking-config-page"
@@ -131,4 +165,3 @@
     <p>Only administrators can access this page.</p>
   </div>
 </div>
-

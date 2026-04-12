@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ProductService } from '../../services/product.service';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
-import { ProductWithStatus } from '../../models/lead.models';
+import { ProductWithStatus, TeamDto, ApiResponse } from '../../models/lead.models';
 
 @Component({
   selector: 'app-products',
@@ -23,16 +23,33 @@ export class ProductsPage implements OnInit {
   protected readonly isCreating = signal<boolean>(false);
   protected readonly isDeleting = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
+  protected readonly teams = signal<TeamDto[]>([]);
   protected newProductName = '';
+  protected newProductTeamId = '';
 
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) {
+      this.loadTeams();
       this.loadProducts();
     }
   }
 
   isAdmin(): boolean {
     return this.apiService.isAdmin();
+  }
+
+  /**
+   * Load all teams for team selection dropdown
+   */
+  loadTeams(): void {
+    this.apiService.get<ApiResponse<TeamDto[]>>('/teams').subscribe({
+      next: (r) => {
+        this.teams.set(r.data ?? []);
+      },
+      error: () => {
+        this.toast.error('Failed to load teams');
+      },
+    });
   }
 
   loadProducts(): void {
@@ -54,11 +71,14 @@ export class ProductsPage implements OnInit {
   openCreateModal(): void {
     this.showCreateModal.set(true);
     this.errorMessage.set('');
+    this.newProductName = '';
+    this.newProductTeamId = '';
   }
 
   closeCreateModal(): void {
     this.showCreateModal.set(false);
     this.newProductName = '';
+    this.newProductTeamId = '';
     this.errorMessage.set('');
     this.isCreating.set(false);
   }
@@ -71,19 +91,30 @@ export class ProductsPage implements OnInit {
       return;
     }
 
+    if (!this.newProductTeamId) {
+      this.errorMessage.set('Team is required');
+      this.toast.error('Team is required');
+      return;
+    }
+
     this.isCreating.set(true);
     this.errorMessage.set('');
 
-    this.productService
-      .createProduct(this.newProductName.trim())
+    // Call backend with teamId
+    this.apiService
+      .post<ApiResponse<any>>('/products', {
+        p_name: this.newProductName.trim(),
+        team_id: this.newProductTeamId,
+      })
       .subscribe({
         next: () => {
           this.loadProducts(); // Reload from backend
           this.closeCreateModal();
+          this.toast.success('Product created successfully');
         },
         error: (error) => {
           this.isCreating.set(false);
-          const msg = error.message || 'Failed to create product';
+          const msg = error.error?.message || error.message || 'Failed to create product';
           this.errorMessage.set(msg);
           this.toast.error(msg);
         },

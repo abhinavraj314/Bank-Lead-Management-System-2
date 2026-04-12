@@ -9,6 +9,7 @@ import { DeduplicationRulesPage } from './pages/deduplication-rules/deduplicatio
 import { RankingConfigPage } from './pages/ranking-config/ranking-config';
 import { Leads } from './pages/leads/leads';
 import { UsersPage } from './pages/users/users';
+import { TeamsPage } from './pages/teams/teams';
 import { AuthGuard } from './services/auth.guard';
 import { AcceptInviteComponent } from './pages/auth/accept-invite/accept-invite';
 
@@ -28,6 +29,7 @@ export const routes: Routes = [
       { path: 'deduplication-rules', component: DeduplicationRulesPage },
       { path: 'ranking-config', component: RankingConfigPage },
       { path: 'users', component: UsersPage, data: { adminOnly: true } },
+      { path: 'teams', component: TeamsPage, data: { adminOnly: true } },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },

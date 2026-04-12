@@ -9,6 +9,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -40,4 +42,9 @@ public class LeadDTO {
     private String assignedUserName;
     private LocalDateTime statusUpdatedAt;
     private LocalDateTime assignedAt;
+
+    /** Allowed workflow targets from current state (empty if terminal) */
+    private List<String> allowedNextStates;
+    private String teamId;
+    private Map<String, Object> scoreBreakdown;
 }

@@ -16,6 +16,7 @@ export class AdminLayout {
     { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
     { path: '/admin/leads', label: 'Leads', icon: 'leads' },
     { path: '/admin/users', label: 'Users', icon: 'users' },
+    { path: '/admin/teams', label: 'Teams', icon: 'teams' },
     { path: '/admin/canonical-fields', label: 'Canonical Fields', icon: 'fields' },
     { path: '/admin/products', label: 'Products', icon: 'products' },
     { path: '/admin/sources', label: 'Sources', icon: 'sources' },

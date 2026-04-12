@@ -33,6 +33,9 @@ public class User {
     @Indexed
     private Role role;
 
+    @Indexed(unique = true)
+    private String userCode;
+
     public enum AccountStatus {
         ACTIVE,
         INVITED

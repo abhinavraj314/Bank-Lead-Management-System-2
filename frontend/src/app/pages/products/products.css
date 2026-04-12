@@ -148,6 +148,17 @@
   padding: 1.5rem;
 }
 
+.team-select-focus {
+  border: 2px solid #3b82f6;
+  outline: 4px solid rgba(59, 130, 246, 0.15);
+  outline-offset: 2px;
+}
+
+.team-select-focus:focus {
+  border-color: #1e40af;
+  outline: 4px solid rgba(30, 64, 175, 0.25);
+}
+
 .modal-footer {
   padding: 1.5rem;
   border-top: 1px solid #e5e7eb;
