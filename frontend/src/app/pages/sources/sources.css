@@ -341,3 +341,42 @@
   text-align: center;
   white-space: nowrap;
 }
+
+.pagination-bar {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-controls label {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.pagination-controls select {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.page-indicator {
+  color: #334155;
+  font-size: 0.875rem;
+  min-width: 105px;
+  text-align: center;
+}

@@ -34,8 +34,21 @@ public class TeamAssignmentService {
                 continue;
             }
             Team team = teamRepository.findById(rule.getTeamId()).orElse(null);
+            lead.setTeamId(team != null ? team.getId() : rule.getTeamId());
+
+            // Optional override: assign to a specific user immediately.
+            if (rule.getAssignedUserId() != null && !rule.getAssignedUserId().isBlank()) {
+                String forcedUserId = rule.getAssignedUserId().trim();
+                User forced = userRepository.findById(forcedUserId).orElse(null);
+                if (forced != null) {
+                    lead.setAssignedUserId(forcedUserId);
+                    lead.setAssignedUserName(forced.getUsername() != null ? forced.getUsername() : forced.getEmail());
+                    lead.setAssignedAt(LocalDateTime.now());
+                    return;
+                }
+            }
+
             if (team == null || team.getMemberUserIds() == null || team.getMemberUserIds().isEmpty()) {
-                lead.setTeamId(team != null ? team.getId() : rule.getTeamId());
                 return;
             }
             List<String> members = team.getMemberUserIds();
@@ -45,7 +58,6 @@ public class TeamAssignmentService {
             if (user == null) {
                 continue;
             }
-            lead.setTeamId(team.getId());
             lead.setAssignedUserId(userId);
             lead.setAssignedUserName(user.getUsername() != null ? user.getUsername() : user.getEmail());
             lead.setAssignedAt(LocalDateTime.now());

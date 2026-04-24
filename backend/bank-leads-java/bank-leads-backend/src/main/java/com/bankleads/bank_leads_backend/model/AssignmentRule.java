@@ -31,4 +31,10 @@ public class AssignmentRule {
     private String sourceId;
 
     private String teamId;
+
+    /**
+     * Optional: if set, immediately assign matched leads to this user (instead of round-robin).
+     * Null/blank = use team round-robin behavior.
+     */
+    private String assignedUserId;
 }

@@ -12,6 +12,7 @@ import { UsersPage } from './pages/users/users';
 import { TeamsPage } from './pages/teams/teams';
 import { AuthGuard } from './services/auth.guard';
 import { AcceptInviteComponent } from './pages/auth/accept-invite/accept-invite';
+import { ReportsPage } from './pages/reports/reports';
 
 export const routes: Routes = [
   { path: 'auth', component: AuthComponent },
@@ -26,6 +27,7 @@ export const routes: Routes = [
       { path: 'canonical-fields', component: CanonicalFieldsPage },
       { path: 'products', component: ProductsPage },
       { path: 'sources', component: SourcesPage },
+      { path: 'reports', component: ReportsPage },
       { path: 'deduplication-rules', component: DeduplicationRulesPage },
       { path: 'ranking-config', component: RankingConfigPage },
       { path: 'users', component: UsersPage, data: { adminOnly: true } },

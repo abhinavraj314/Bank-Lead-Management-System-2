@@ -1,0 +1,183 @@
+<div class="reports-page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Reports</h1>
+      <p class="page-subtitle">Source-wise lead analytics and conversion insights</p>
+    </div>
+    <button class="btn-refresh" (click)="refresh()" [disabled]="isLoading()" title="Refresh reports">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+        <polyline points="21 3 21 9 15 9"></polyline>
+      </svg>
+    </button>
+  </div>
+
+  <div class="filters-card">
+    <div class="filter-group">
+      <label for="product">Product</label>
+      <select
+        id="product"
+        [ngModel]="selectedProductId()"
+        (ngModelChange)="onProductChange($event)"
+        [disabled]="isLoading()"
+      >
+        <option value="ALL">All Products</option>
+        <option *ngFor="let product of products()" [value]="product.product_id">
+          {{ product.product_name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="source">Lead Source</label>
+      <select
+        id="source"
+        [ngModel]="selectedSourceId()"
+        (ngModelChange)="onSourceChange($event)"
+        [disabled]="isLoading()"
+      >
+        <option value="ALL">All Sources</option>
+        <option *ngFor="let source of filteredSources()" [value]="source.source_id">
+          {{ source.source_name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Chart Type</label>
+      <div class="toggle-group">
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="chartType() === 'bar'"
+          (click)="onChartTypeChange('bar')"
+        >
+          Bar
+        </button>
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="chartType() === 'line'"
+          (click)="onChartTypeChange('line')"
+        >
+          Line
+        </button>
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="chartType() === 'pie'"
+          (click)="onChartTypeChange('pie')"
+        >
+          Pie
+        </button>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <label>Trend Bucket</label>
+      <div class="toggle-group">
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="trendBucket() === 'day'"
+          (click)="onTrendBucketChange('day')"
+        >
+          Daily
+        </button>
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="trendBucket() === 'week'"
+          (click)="onTrendBucketChange('week')"
+        >
+          Weekly
+        </button>
+        <button
+          type="button"
+          class="toggle-btn"
+          [class.active]="trendBucket() === 'month'"
+          (click)="onTrendBucketChange('month')"
+        >
+          Monthly
+        </button>
+      </div>
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="error-banner">{{ errorMessage() }}</div>
+  }
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Leads</div>
+      <div class="kpi-value">{{ summary().totalLeads }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Converted Leads</div>
+      <div class="kpi-value">{{ summary().convertedLeads }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Not Converted</div>
+      <div class="kpi-value">{{ summary().notConvertedLeads }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Conversion Rate</div>
+      <div class="kpi-value">{{ summary().conversionRate }}%</div>
+    </div>
+  </div>
+
+  @if (isLoading()) {
+    <div class="loading-card">Loading analytics...</div>
+  } @else {
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Source Performance</h3>
+        <div class="chart-host">
+          @if (isBrowser()) {
+            <canvas
+              baseChart
+              [data]="sourceChartData()"
+              [type]="'bar'"
+              [options]="sourceChartOptions()"
+            ></canvas>
+          } @else {
+            <div class="chart-placeholder">Chart available in browser view</div>
+          }
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Status Distribution</h3>
+        <div class="chart-host">
+          @if (isBrowser()) {
+            <canvas
+              baseChart
+              [data]="stateChartData()"
+              [type]="chartType()"
+              [options]="stateChartOptions()"
+            ></canvas>
+          } @else {
+            <div class="chart-placeholder">Chart available in browser view</div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-card trend-card">
+      <h3>Lead Trend Over Time</h3>
+      <div class="chart-host">
+        @if (isBrowser()) {
+          <canvas
+            baseChart
+            [data]="trendChartData()"
+            [type]="trendChartType()"
+            [options]="trendOptions"
+          ></canvas>
+        } @else {
+          <div class="chart-placeholder">Trend chart available in browser view</div>
+        }
+      </div>
+    </div>
+  }
+</div>

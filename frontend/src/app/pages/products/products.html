@@ -38,6 +38,38 @@
     </table>
   </div>
 
+  <div class="pagination-bar">
+    <div class="pagination-info">{{ paginationText() }}</div>
+    <div class="pagination-controls">
+      <label for="products-page-size">Rows</label>
+      <select
+        id="products-page-size"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+        [disabled]="isLoading()"
+      >
+        <option [ngValue]="10">10</option>
+        <option [ngValue]="25">25</option>
+        <option [ngValue]="50">50</option>
+      </select>
+      <button
+        class="btn btn-secondary btn-sm"
+        (click)="prevPage()"
+        [disabled]="isLoading() || currentPage() <= 1"
+      >
+        Prev
+      </button>
+      <span class="page-indicator">Page {{ currentPage() }} of {{ totalPages() }}</span>
+      <button
+        class="btn btn-secondary btn-sm"
+        (click)="nextPage()"
+        [disabled]="isLoading() || currentPage() >= totalPages()"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+
   <!-- Create Modal -->
   @if (showCreateModal()) {
     <div class="modal-overlay" (click)="closeCreateModal()">

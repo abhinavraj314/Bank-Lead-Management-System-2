@@ -4,12 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
 import { ProductService } from '../../services/product.service';
-import { SourceService } from '../../services/source.service';
 import {
   ApiResponse,
   AssignmentRuleDto,
   Product,
-  Source,
   TeamDto,
   UserResponse,
 } from '../../models/lead.models';
@@ -23,8 +21,13 @@ type TeamEditRow = {
 type RuleEditRow = {
   priority: number;
   productId: string;
-  sourceId: string;
   teamId: string;
+  assignedUserId: string;
+};
+
+type WorkflowTransitionRow = {
+  fromState: string;
+  toState: string;
 };
 
 @Component({
@@ -38,19 +41,33 @@ export class TeamsPage implements OnInit {
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
   private readonly productService = inject(ProductService);
-  private readonly sourceService = inject(SourceService);
   private readonly platformId = inject(PLATFORM_ID);
 
   teams = signal<TeamDto[]>([]);
   teamRows = signal<TeamEditRow[]>([]);
   ruleRows = signal<RuleEditRow[]>([]);
   products = signal<Product[]>([]);
-  sources = signal<Source[]>([]);
   users = signal<UserResponse[]>([]); // List of all active users for dropdowns
 
   loading = signal(false);
   savingTeamId = signal<string | 'new' | null>(null);
   savingRules = signal(false);
+
+  // Lead lifecycle (workflow) editor state
+  workflowTeamId = signal<string>(''); // selected team to configure lifecycle
+  workflowTransitions = signal<WorkflowTransitionRow[]>([]);
+  workflowIsOverride = signal(false); // for TEAM scope only
+  savingWorkflow = signal(false);
+
+  readonly leadStates = [
+    'NEW',
+    'ASSIGNED',
+    'CONTACTED',
+    'PROPOSAL_SENT',
+    'CONVERTED',
+    'NOT_CONVERTED',
+    'CLOSED',
+  ];
 
   // Create team modal state
   showCreateTeamModal = signal(false);
@@ -61,9 +78,9 @@ export class TeamsPage implements OnInit {
   ngOnInit() {
     if (isPlatformBrowser(this.platformId)) {
       this.productService.getProducts().subscribe((p) => this.products.set(p));
-      this.sourceService.getSources().subscribe((s) => this.sources.set(s));
       this.loadUsers();
       this.refreshAll();
+      this.loadWorkflowEditor();
     }
   }
 
@@ -254,12 +271,110 @@ export class TeamsPage implements OnInit {
           list.map((x) => ({
             priority: x.priority ?? 0,
             productId: x.productId?.trim() ?? '',
-            sourceId: x.sourceId?.trim() ?? '',
             teamId: x.teamId ?? '',
+            assignedUserId: x.assignedUserId?.trim() ?? '',
           })),
         );
       },
       error: () => this.toast.error('Failed to load assignment rules'),
+    });
+  }
+
+  // ==================== Lead lifecycle editor ====================
+  loadWorkflowEditor() {
+    const teamId = (this.workflowTeamId() || '').trim();
+    if (!teamId) {
+      this.workflowIsOverride.set(false);
+      this.workflowTransitions.set([]);
+      return;
+    }
+
+    this.api.get<ApiResponse<any>>(`/workflows/team/${teamId}`).subscribe({
+      next: (r) => {
+        const payload = r.data as any;
+        const isOverride = Boolean(payload?.isOverride);
+        const def = payload?.definition;
+        const transitions = (def?.transitions ?? []) as any[];
+        this.workflowIsOverride.set(isOverride);
+        this.workflowTransitions.set(
+          transitions.map((t) => ({
+            fromState: String(t.fromState ?? '').toUpperCase(),
+            toState: String(t.toState ?? '').toUpperCase(),
+          })),
+        );
+      },
+      error: () => this.toast.error('Failed to load team lifecycle'),
+    });
+  }
+
+  addWorkflowTransitionRow() {
+    this.workflowTransitions.update((list) => [...list, { fromState: 'NEW', toState: 'ASSIGNED' }]);
+  }
+
+  removeWorkflowTransitionRow(idx: number) {
+    this.workflowTransitions.update((list) => list.filter((_, i) => i !== idx));
+  }
+
+  saveWorkflow() {
+    const teamId = (this.workflowTeamId() || '').trim();
+    const transitions = this.workflowTransitions()
+      .map((t) => ({
+        fromState: (t.fromState || '').trim().toUpperCase(),
+        toState: (t.toState || '').trim().toUpperCase(),
+      }))
+      .filter((t) => t.fromState && t.toState);
+
+    if (transitions.length === 0) {
+      this.toast.error('Add at least one transition');
+      return;
+    }
+
+    this.savingWorkflow.set(true);
+    if (!teamId) {
+      this.savingWorkflow.set(false);
+      this.toast.error('Select a team');
+      return;
+    }
+
+    this.api.put<ApiResponse<any>>(`/workflows/team/${teamId}`, { transitions }).subscribe({
+      next: (r) => {
+        this.savingWorkflow.set(false);
+        if (!r.success) {
+          this.toast.error(r.message || 'Failed to save lifecycle');
+          return;
+        }
+        this.toast.success('Lifecycle saved');
+        this.loadWorkflowEditor();
+      },
+      error: (e) => {
+        this.savingWorkflow.set(false);
+        this.toast.error(e?.error?.message || e?.message || 'Failed to save lifecycle');
+      },
+    });
+  }
+
+  revertWorkflowToDefault() {
+    const teamId = (this.workflowTeamId() || '').trim();
+    if (!teamId) {
+      this.toast.error('Select a team');
+      return;
+    }
+    if (!confirm('Revert this team to the global default lifecycle?')) return;
+    this.savingWorkflow.set(true);
+    this.api.delete<ApiResponse<any>>(`/workflows/team/${teamId}`).subscribe({
+      next: (r) => {
+        this.savingWorkflow.set(false);
+        if (!r.success) {
+          this.toast.error(r.message || 'Failed to revert lifecycle');
+          return;
+        }
+        this.toast.success('Reverted to default');
+        this.loadWorkflowEditor();
+      },
+      error: (e) => {
+        this.savingWorkflow.set(false);
+        this.toast.error(e?.error?.message || e?.message || 'Failed to revert lifecycle');
+      },
     });
   }
 
@@ -268,7 +383,7 @@ export class TeamsPage implements OnInit {
       this.ruleRows().length === 0 ? 0 : Math.max(...this.ruleRows().map((x) => x.priority)) + 1;
     this.ruleRows.update((list) => [
       ...list,
-      { priority: nextPri, productId: '', sourceId: '', teamId: '' },
+      { priority: nextPri, productId: '', teamId: '', assignedUserId: '' },
     ]);
   }
 
@@ -280,8 +395,8 @@ export class TeamsPage implements OnInit {
     const body = this.ruleRows().map((r) => ({
       priority: Number(r.priority) || 0,
       productId: r.productId?.trim() ? r.productId.trim() : null,
-      sourceId: r.sourceId?.trim() ? r.sourceId.trim() : null,
       teamId: r.teamId?.trim() || '',
+      assignedUserId: r.assignedUserId?.trim() ? r.assignedUserId.trim() : null,
     }));
     for (const r of body) {
       if (!r.teamId) {
@@ -302,8 +417,8 @@ export class TeamsPage implements OnInit {
           list.map((x) => ({
             priority: x.priority ?? 0,
             productId: x.productId?.trim() ?? '',
-            sourceId: x.sourceId?.trim() ?? '',
             teamId: x.teamId ?? '',
+            assignedUserId: x.assignedUserId?.trim() ?? '',
           })),
         );
         this.toast.success('Assignment rules saved');
@@ -313,10 +428,5 @@ export class TeamsPage implements OnInit {
         this.toast.error(e?.error?.message || e?.message || 'Failed to save rules');
       },
     });
-  }
-
-  sourcesForProduct(productId: string): Source[] {
-    if (!productId) return this.sources();
-    return this.sources().filter((s) => s.product_id === productId);
   }
 }

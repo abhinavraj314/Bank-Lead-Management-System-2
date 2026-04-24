@@ -20,6 +20,7 @@ export class AdminLayout {
     { path: '/admin/canonical-fields', label: 'Canonical Fields', icon: 'fields' },
     { path: '/admin/products', label: 'Products', icon: 'products' },
     { path: '/admin/sources', label: 'Sources', icon: 'sources' },
+    { path: '/admin/reports', label: 'Reports', icon: 'reports' },
     { path: '/admin/deduplication-rules', label: 'Deduplication Rules', icon: 'rules' },
     { path: '/admin/ranking-config', label: 'Ranking Config', icon: 'ranking' },
   ];
@@ -30,6 +31,7 @@ export class AdminLayout {
     { path: '/admin/canonical-fields', label: 'View Canonical Fields', icon: 'fields' },
     { path: '/admin/products', label: 'View Products', icon: 'products' },
     { path: '/admin/sources', label: 'View Sources', icon: 'sources' },
+    { path: '/admin/reports', label: 'View Reports', icon: 'reports' },
   ];
 
   get navItems() {

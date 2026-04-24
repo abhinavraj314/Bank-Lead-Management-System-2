@@ -3,7 +3,7 @@
     <div>
       <h1 class="page-title">Teams &amp; routing</h1>
       <p class="page-description">
-        Define sales teams and ordered assignment rules. New leads are matched by product/source and
+        Define sales teams and ordered assignment rules. New leads are matched by product and
         assigned round-robin within the team.
       </p>
     </div>
@@ -196,10 +196,132 @@
     </div>
 
     <div class="section-card">
+      <h2 class="section-title">Lead lifecycle</h2>
+      <p class="section-subtitle">
+        Define which stage can follow which stage per team. If no override exists, the global default
+        is used.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label required">Team</label>
+        <select class="input" [(ngModel)]="workflowTeamId" (change)="loadWorkflowEditor()">
+          <option value="">-- Select team --</option>
+          @for (t of teams(); track t.id) {
+            <option [value]="t.id">{{ t.name }} ({{ t.id }})</option>
+          }
+        </select>
+        @if (workflowTeamId()) {
+          <p class="form-hint">
+            {{ workflowIsOverride() ? 'Override active for this team.' : 'No override yet (using global default).' }}
+          </p>
+        }
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of workflowTransitions(); track $index) {
+              <tr>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="t.fromState"
+                    [ngModelOptions]="{ standalone: true }"
+                    [disabled]="!workflowTeamId()"
+                  >
+                    @for (s of leadStates; track s) {
+                      <option [value]="s">{{ s }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="t.toState"
+                    [ngModelOptions]="{ standalone: true }"
+                    [disabled]="!workflowTeamId()"
+                  >
+                    @for (s of leadStates; track s) {
+                      <option [value]="s">{{ s }}</option>
+                    }
+                  </select>
+                </td>
+                <td class="cell-actions">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-icon btn-icon-danger"
+                    (click)="removeWorkflowTransitionRow($index)"
+                    [disabled]="!workflowTeamId()"
+                    aria-label="Delete transition"
+                    title="Delete transition"
+                  >
+                    <svg
+                      class="icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M19 6l-1 14H6L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="3" class="muted">No transitions loaded.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="rules-footer">
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="addWorkflowTransitionRow()"
+          [disabled]="!workflowTeamId()"
+        >
+          + Add transition
+        </button>
+        <button
+          type="button"
+          class="btn btn-outline-danger"
+          (click)="revertWorkflowToDefault()"
+          [disabled]="savingWorkflow() || !workflowTeamId() || !workflowIsOverride()"
+        >
+          Revert to default
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="saveWorkflow()"
+          [disabled]="savingWorkflow() || !workflowTeamId()"
+        >
+          {{ savingWorkflow() ? 'Saving…' : 'Save lifecycle' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="section-card">
       <h2 class="section-title">Assignment rules</h2>
       <p class="section-subtitle">
-        Lower priority number runs first. Leave product or source empty to match any. First matching
-        rule assigns the lead’s team (and round-robin user).
+        Lower priority number runs first. Leave product empty to match any. First matching rule
+        assigns the lead’s team (and round-robin user).
       </p>
 
       <div class="table-wrap">
@@ -208,8 +330,8 @@
             <tr>
               <th>Priority</th>
               <th>Product</th>
-              <th>Source</th>
               <th>Team</th>
+              <th>Assign to</th>
               <th></th>
             </tr>
           </thead>
@@ -239,24 +361,24 @@
                 <td>
                   <select
                     class="input"
-                    [(ngModel)]="rule.sourceId"
-                    [ngModelOptions]="{ standalone: true }"
-                  >
-                    <option value="">Any source</option>
-                    @for (s of sourcesForProduct(rule.productId); track s.source_id) {
-                      <option [value]="s.source_id">{{ s.source_name }}</option>
-                    }
-                  </select>
-                </td>
-                <td>
-                  <select
-                    class="input"
                     [(ngModel)]="rule.teamId"
                     [ngModelOptions]="{ standalone: true }"
                   >
                     <option value="">Select team</option>
                     @for (t of teams(); track t.id) {
                       <option [value]="t.id">{{ t.name }} ({{ t.id }})</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <select
+                    class="input"
+                    [(ngModel)]="rule.assignedUserId"
+                    [ngModelOptions]="{ standalone: true }"
+                  >
+                    <option value="">Round-robin (team)</option>
+                    @for (u of users(); track u.id) {
+                      <option [value]="u.id">{{ u.userCode || 'N/A' }} - {{ u.username }}</option>
                     }
                   </select>
                 </td>

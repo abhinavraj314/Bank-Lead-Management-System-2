@@ -20,7 +20,7 @@ public class LeadStateService {
         Lead.LeadStatus target = workflowService.normalizeTargetState(newStatus);
         Lead.LeadStatus currentNorm = workflowService.normalizeCurrentState(lead);
 
-        if (!workflowService.isTransitionAllowed(currentNorm, target)) {
+        if (!workflowService.isTransitionAllowed(currentNorm, target, lead)) {
             throw new IllegalArgumentException(
                     String.format("Invalid state transition from %s to %s", currentNorm, target)
             );

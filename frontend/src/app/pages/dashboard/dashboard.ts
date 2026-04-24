@@ -41,6 +41,13 @@ export class Dashboard {
       route: '/admin/sources',
       icon: 'sources',
       gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
+    },
+    {
+      title: 'Reports',
+      description: 'Visual analytics of lead source performance',
+      route: '/admin/reports',
+      icon: 'reports',
+      gradient: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)'
     }
   ];
 
@@ -72,6 +79,13 @@ export class Dashboard {
       route: '/admin/sources',
       icon: 'sources',
       gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
+    },
+    {
+      title: 'View Reports',
+      description: 'Analyze source performance visually',
+      route: '/admin/reports',
+      icon: 'reports',
+      gradient: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)'
     }
   ];
 

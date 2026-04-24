@@ -322,6 +322,23 @@
   cursor: not-allowed;
 }
 
+.btn-outline-danger {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.btn-outline-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+}
+
+.btn-outline-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-danger {
   background: #ef4444;
   color: white;
@@ -337,6 +354,32 @@
   padding: 0.4rem 0.875rem;
   font-size: 0.875rem;
   font-weight: 500;
+}
+
+.btn-icon {
+  padding: 0.4rem;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon .icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.btn-icon-danger {
+  background: transparent;
+  border: 1px solid #fecaca;
+  color: #ef4444;
+}
+
+.btn-icon-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.12);
 }
 
 /* Improved table styling */

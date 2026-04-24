@@ -15,40 +15,53 @@ import { ApiService } from './api.service';
 export class ProductService {
   constructor(private apiService: ApiService) {}
 
+  getProductsPage(params?: {
+    page?: number;
+    limit?: number;
+  }): Observable<{ items: Product[]; total: number; page: number; limit: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 10;
+    return this.apiService
+      .get<ApiResponse<Page<BackendProduct>>>(`/products?page=${page}&limit=${limit}`)
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            console.warn('API returned unsuccessful response or no data:', response);
+            return { items: [], total: 0, page, limit };
+          }
+
+          const pageData = response.data;
+          const products = pageData.content || [];
+          const items = products.map((backendProduct: BackendProduct) => ({
+            product_id: backendProduct.pId,
+            product_name: backendProduct.pName,
+            deduplication_fields: backendProduct.deduplicationFields || [],
+            created_date: backendProduct.createdAt
+              ? new Date(backendProduct.createdAt).toISOString().split('T')[0]
+              : undefined,
+          }));
+
+          return {
+            items,
+            total: Number(pageData.totalElements ?? items.length) || 0,
+            page: Number(pageData.number ?? page - 1) + 1,
+            limit: Number(pageData.size ?? limit) || limit,
+          };
+        }),
+        catchError((error) => {
+          console.error('Error fetching products:', error);
+          return of({ items: [], total: 0, page, limit });
+        }),
+      );
+  }
+
   /**
    * Get all products from Spring Boot backend
    * Handles ApiResponse<Page<Product>> wrapper
    * Maps camelCase fields (pId, pName) to frontend fields (product_id, product_name)
    */
   getProducts(): Observable<Product[]> {
-    return this.apiService.get<ApiResponse<Page<BackendProduct>>>('/products').pipe(
-      map((response) => {
-        // Extract data from ApiResponse wrapper
-        if (!response.success || !response.data) {
-          console.warn('API returned unsuccessful response or no data:', response);
-          return [];
-        }
-
-        // Extract products from Page wrapper
-        const page = response.data;
-        const products = page.content || [];
-
-        // Map backend camelCase fields to frontend snake_case fields
-        return products.map((backendProduct: BackendProduct) => ({
-          product_id: backendProduct.pId,
-          product_name: backendProduct.pName,
-          deduplication_fields: backendProduct.deduplicationFields || [],
-          created_date: backendProduct.createdAt
-            ? new Date(backendProduct.createdAt).toISOString().split('T')[0]
-            : undefined,
-        }));
-      }),
-      catchError((error) => {
-        console.error('Error fetching products:', error);
-        // Return empty array on error to prevent UI breakage
-        return of([]);
-      }),
-    );
+    return this.getProductsPage({ page: 1, limit: 1000 }).pipe(map((result) => result.items));
   }
 
   /**

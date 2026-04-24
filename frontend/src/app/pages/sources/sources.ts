@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, computed, signal, inject, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SourceService } from '../../services/source.service';
@@ -25,7 +25,14 @@ export class SourcesPage implements OnInit {
   protected readonly showCreateModal = signal<boolean>(false);
   protected readonly isCreating = signal<boolean>(false);
   protected readonly isDeleting = signal<boolean>(false);
+  protected readonly isLoading = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
+  protected readonly currentPage = signal<number>(1);
+  protected readonly pageSize = signal<number>(10);
+  protected readonly totalSources = signal<number>(0);
+  protected readonly totalPages = computed(() =>
+    Math.max(1, Math.ceil(this.totalSources() / this.pageSize())),
+  );
   protected readonly currentStep = signal<number>(1); // 1: Source details, 2: Columns
   protected readonly showColumnsModal = signal<boolean>(false);
   protected readonly selectedSource = signal<Source | null>(null);
@@ -47,20 +54,27 @@ export class SourcesPage implements OnInit {
   }
 
   loadSources(): void {
-    this.sourceService.getSources().subscribe({
-      next: (sources) => {
-        // Add mock status
-        const sourcesWithStatus: Source[] = sources.map((s) => ({
-          ...s,
-          status: 'active',
-        }));
-        this.sources.set(sourcesWithStatus);
-      },
-      error: (error) => {
-        const msg = error?.message || 'Failed to load sources';
-        this.toast.error(msg);
-      },
-    });
+    this.isLoading.set(true);
+    this.sourceService
+      .getSourcesPage({ page: this.currentPage(), limit: this.pageSize() })
+      .subscribe({
+        next: ({ items, total }) => {
+          const sourcesWithStatus: Source[] = items.map((s) => ({
+            ...s,
+            status: s.status || 'active',
+          }));
+          this.sources.set(sourcesWithStatus);
+          this.totalSources.set(total);
+          this.isLoading.set(false);
+        },
+        error: (error) => {
+          const msg = error?.message || 'Failed to load sources';
+          this.toast.error(msg);
+          this.sources.set([]);
+          this.totalSources.set(0);
+          this.isLoading.set(false);
+        },
+      });
   }
 
   loadProducts(): void {
@@ -152,6 +166,7 @@ export class SourcesPage implements OnInit {
       })
       .subscribe({
         next: () => {
+          this.currentPage.set(1);
           this.loadSources(); // Reload from backend
           this.closeCreateModal();
         },
@@ -190,6 +205,11 @@ export class SourcesPage implements OnInit {
     this.isDeleting.set(true);
     this.sourceService.deleteSource(sourceId).subscribe({
       next: () => {
+        const hasOnlyOneItemOnCurrentPage =
+          this.sources().length === 1 && this.currentPage() > 1 && this.totalSources() > 1;
+        if (hasOnlyOneItemOnCurrentPage) {
+          this.currentPage.set(this.currentPage() - 1);
+        }
         this.loadSources();
         this.isDeleting.set(false);
       },
@@ -198,5 +218,37 @@ export class SourcesPage implements OnInit {
         this.toast.error('Failed to delete source: ' + (error.message || 'Unknown error'));
       },
     });
+  }
+
+  protected goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages() || page === this.currentPage()) {
+      return;
+    }
+    this.currentPage.set(page);
+    this.loadSources();
+  }
+
+  protected prevPage(): void {
+    this.goToPage(this.currentPage() - 1);
+  }
+
+  protected nextPage(): void {
+    this.goToPage(this.currentPage() + 1);
+  }
+
+  protected onPageSizeChange(size: number): void {
+    const parsed = Number(size) || 10;
+    this.pageSize.set(parsed);
+    this.currentPage.set(1);
+    this.loadSources();
+  }
+
+  protected paginationText(): string {
+    if (this.totalSources() === 0) {
+      return 'Showing 0 of 0';
+    }
+    const start = (this.currentPage() - 1) * this.pageSize() + 1;
+    const end = Math.min(this.currentPage() * this.pageSize(), this.totalSources());
+    return `Showing ${start}-${end} of ${this.totalSources()}`;
   }
 }

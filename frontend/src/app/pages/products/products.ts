@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, computed, signal, inject, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ProductService } from '../../services/product.service';
@@ -22,8 +22,15 @@ export class ProductsPage implements OnInit {
   protected readonly showCreateModal = signal<boolean>(false);
   protected readonly isCreating = signal<boolean>(false);
   protected readonly isDeleting = signal<boolean>(false);
+  protected readonly isLoading = signal<boolean>(false);
   protected readonly errorMessage = signal<string>('');
   protected readonly teams = signal<TeamDto[]>([]);
+  protected readonly currentPage = signal<number>(1);
+  protected readonly pageSize = signal<number>(10);
+  protected readonly totalProducts = signal<number>(0);
+  protected readonly totalPages = computed(() =>
+    Math.max(1, Math.ceil(this.totalProducts() / this.pageSize())),
+  );
   protected newProductName = '';
   protected newProductTeamId = '';
 
@@ -53,19 +60,69 @@ export class ProductsPage implements OnInit {
   }
 
   loadProducts(): void {
-    this.productService.getProducts().subscribe({
-      next: (products) => {
-        const productsWithStatus: ProductWithStatus[] = products.map((p, index) => ({
-          ...p,
-          status: index % 3 === 0 ? 'inactive' : 'active',
-        }));
-        this.products.set(productsWithStatus);
-      },
-      error: (error) => {
-        const msg = error?.message || 'Failed to load products';
-        this.toast.error(msg);
-      },
-    });
+    this.isLoading.set(true);
+    this.productService
+      .getProductsPage({ page: this.currentPage(), limit: this.pageSize() })
+      .subscribe({
+        next: ({ items, total }) => {
+          const productsWithStatus: ProductWithStatus[] = items.map((p, index) => ({
+            ...p,
+            status: index % 3 === 0 ? 'inactive' : 'active',
+          }));
+          this.products.set(productsWithStatus);
+          this.totalProducts.set(total);
+          this.isLoading.set(false);
+        },
+        error: (error) => {
+          const msg = error?.message || 'Failed to load products';
+          this.toast.error(msg);
+          this.products.set([]);
+          this.totalProducts.set(0);
+          this.isLoading.set(false);
+        },
+      });
+  }
+
+  protected goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages() || page === this.currentPage()) {
+      return;
+    }
+    this.currentPage.set(page);
+    this.loadProducts();
+  }
+
+  protected prevPage(): void {
+    this.goToPage(this.currentPage() - 1);
+  }
+
+  protected nextPage(): void {
+    this.goToPage(this.currentPage() + 1);
+  }
+
+  protected onPageSizeChange(size: number): void {
+    const parsed = Number(size) || 10;
+    this.pageSize.set(parsed);
+    this.currentPage.set(1);
+    this.loadProducts();
+  }
+
+  protected paginationText(): string {
+    if (this.totalProducts() === 0) {
+      return 'Showing 0 of 0';
+    }
+    const start = (this.currentPage() - 1) * this.pageSize() + 1;
+    const end = Math.min(this.currentPage() * this.pageSize(), this.totalProducts());
+    return `Showing ${start}-${end} of ${this.totalProducts()}`;
+  }
+
+  private reloadFirstPageIfNeeded(): void {
+    const hasOnlyOneItemOnCurrentPage =
+      this.products().length === 1 && this.currentPage() > 1 && this.totalProducts() > 1;
+    if (hasOnlyOneItemOnCurrentPage) {
+      this.currentPage.set(this.currentPage() - 1);
+    } else if (this.currentPage() < 1) {
+      this.currentPage.set(1);
+    }
   }
 
   openCreateModal(): void {
@@ -108,6 +165,7 @@ export class ProductsPage implements OnInit {
       })
       .subscribe({
         next: () => {
+          this.currentPage.set(1);
           this.loadProducts(); // Reload from backend
           this.closeCreateModal();
           this.toast.success('Product created successfully');
@@ -129,6 +187,7 @@ export class ProductsPage implements OnInit {
     this.isDeleting.set(true);
     this.productService.deleteProduct(productId).subscribe({
       next: () => {
+        this.reloadFirstPageIfNeeded();
         this.loadProducts();
         this.isDeleting.set(false);
       },

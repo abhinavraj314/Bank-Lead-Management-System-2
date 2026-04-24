@@ -9,52 +9,64 @@ import { ApiService } from './api.service';
 export class SourceService {
   constructor(private apiService: ApiService) {}
 
+  getSourcesPage(params?: {
+    page?: number;
+    limit?: number;
+  }): Observable<{ items: Source[]; total: number; page: number; limit: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 10;
+    return this.apiService
+      .get<ApiResponse<Page<BackendSource>>>(`/sources?page=${page}&limit=${limit}`)
+      .pipe(
+        map((response) => {
+          if (!response.success || !response.data) {
+            console.warn('API returned unsuccessful response or no data:', response);
+            return { items: [], total: 0, page, limit };
+          }
+
+          const pageData = response.data;
+          const sources = pageData.content || [];
+          const items = sources.map((backendSource: BackendSource) => {
+            const backendStatus = (backendSource as any).status;
+            let normalizedStatus: 'active' | 'inactive' | undefined = undefined;
+
+            if (backendStatus && typeof backendStatus === 'string') {
+              const lowerStatus = backendStatus.toLowerCase();
+              if (lowerStatus === 'active' || lowerStatus === 'inactive') {
+                normalizedStatus = lowerStatus as 'active' | 'inactive';
+              }
+            }
+
+            return {
+              source_id: backendSource.sId,
+              source_name: backendSource.sName,
+              product_id: backendSource.pId,
+              status: normalizedStatus,
+              columns: backendSource.columns || [],
+            };
+          });
+
+          return {
+            items,
+            total: Number(pageData.totalElements ?? items.length) || 0,
+            page: Number(pageData.number ?? page - 1) + 1,
+            limit: Number(pageData.size ?? limit) || limit,
+          };
+        }),
+        catchError((error) => {
+          console.error('Error fetching sources:', error);
+          return of({ items: [], total: 0, page, limit });
+        }),
+      );
+  }
+
   /**
    * Get all sources from Spring Boot backend
    * Handles ApiResponse<Page<Source>> wrapper
    * Maps camelCase fields (sId, sName, pId) to frontend fields (source_id, source_name, product_id)
    */
   getSources(): Observable<Source[]> {
-    return this.apiService.get<ApiResponse<Page<BackendSource>>>('/sources').pipe(
-      map((response) => {
-        // Extract data from ApiResponse wrapper
-        if (!response.success || !response.data) {
-          console.warn('API returned unsuccessful response or no data:', response);
-          return [];
-        }
-
-        // Extract sources from Page wrapper
-        const page = response.data;
-        const sources = page.content || [];
-
-        // Map backend camelCase fields to frontend snake_case fields
-        return sources.map((backendSource: BackendSource) => {
-          // Normalize status if provided by backend, otherwise undefined
-          const backendStatus = (backendSource as any).status;
-          let normalizedStatus: 'active' | 'inactive' | undefined = undefined;
-
-          if (backendStatus && typeof backendStatus === 'string') {
-            const lowerStatus = backendStatus.toLowerCase();
-            if (lowerStatus === 'active' || lowerStatus === 'inactive') {
-              normalizedStatus = lowerStatus as 'active' | 'inactive';
-            }
-          }
-
-          return {
-            source_id: backendSource.sId,
-            source_name: backendSource.sName,
-            product_id: backendSource.pId,
-            status: normalizedStatus,
-            columns: backendSource.columns || [],
-          };
-        });
-      }),
-      catchError((error) => {
-        console.error('Error fetching sources:', error);
-        // Return empty array on error to prevent UI breakage
-        return of([]);
-      }),
-    );
+    return this.getSourcesPage({ page: 1, limit: 1000 }).pipe(map((result) => result.items));
   }
 
   /**

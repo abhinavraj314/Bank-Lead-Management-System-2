@@ -190,6 +190,7 @@ export interface AssignmentRuleDto {
   productId?: string | null;
   sourceId?: string | null;
   teamId: string;
+  assignedUserId?: string | null;
 }
 
 // Spring Boot API Response Wrapper
